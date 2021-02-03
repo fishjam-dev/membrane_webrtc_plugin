@@ -27,7 +27,7 @@ defmodule Membrane.WebRTC.SDP do
     `encoding_name` - name of codec e.g. `:OPUS`, `:VP9`
     `pt` - payload type
     """
-    @type codecs :: {encoding_name :: atom(), {pt :: non_neg_integer(), RTPMapping.t(), Fmtp.t()}}
+    @type codecs :: {encoding_name :: atom(), RTPMapping.t() | {RTPMapping.t(), Fmtp.t()}}
 
     @typedoc """
     Options that can be used to customize SDP.
@@ -205,15 +205,25 @@ defmodule Membrane.WebRTC.SDP do
 
   defp add_codecs(media, codecs) do
     Enum.reduce(codecs, media, fn
-      {_codec, {_pt, rtp_mapping, fmtp}}, media ->
+      {_codec, %RTPMapping{} = rtp_mapping}, media ->
+        Media.add_attribute(media, rtp_mapping)
+
+      {_codec, {%RTPMapping{} = rtp_mapping, %Fmtp{} = fmtp}}, media ->
         media
         |> Media.add_attribute(rtp_mapping)
         |> Media.add_attribute(fmtp)
+
+      _, _media ->
+        raise("Invalid custom codec format")
     end)
   end
 
   defp get_payload_types(codecs) do
-    Enum.reduce(codecs, [], fn {_codec, {pt, _rtp_mapping, _fmtp}}, acc -> [pt | acc] end)
+    Enum.reduce(codecs, [], fn
+      {_codec, %RTPMapping{payload_type: pt}}, acc -> [pt | acc]
+      {_codec, {%RTPMapping{payload_type: pt}, _fmtp}}, acc -> [pt | acc]
+      _, _acc -> raise("Invalid custom codec format")
+    end)
   end
 
   defp get_opus(fmt_mappings) do
@@ -222,7 +232,7 @@ defmodule Membrane.WebRTC.SDP do
     pt = fmt_mappings[:OPUS] || pt
     rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", params: 2, payload_type: pt}
     fmtp = %Fmtp{pt: pt, useinbandfec: true}
-    {pt, rtp_mapping, fmtp}
+    {rtp_mapping, fmtp}
   end
 
   defp get_h264(fmt_mappings) do
@@ -238,7 +248,7 @@ defmodule Membrane.WebRTC.SDP do
       profile_level_id: 0x42E01F
     }
 
-    {pt, rtp_mapping, fmtp}
+    {rtp_mapping, fmtp}
   end
 
   defp generate_ssrcs(audio_num, video_num) do
