@@ -213,7 +213,7 @@ defmodule Membrane.WebRTC.SDP do
         |> Media.add_attribute(rtp_mapping)
         |> Media.add_attribute(fmtp)
 
-      _, _media ->
+      _codec, _media ->
         raise("Invalid custom codec format")
     end)
   end
@@ -222,8 +222,9 @@ defmodule Membrane.WebRTC.SDP do
     Enum.reduce(codecs, [], fn
       {_codec, %RTPMapping{payload_type: pt}}, acc -> [pt | acc]
       {_codec, {%RTPMapping{payload_type: pt}, _fmtp}}, acc -> [pt | acc]
-      _, _acc -> raise("Invalid custom codec format")
+      _codec, _acc -> raise("Invalid custom codec format")
     end)
+    |> Enum.reverse()
   end
 
   defp get_opus(fmt_mappings) do
