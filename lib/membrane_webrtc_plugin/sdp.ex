@@ -73,9 +73,7 @@ defmodule Membrane.WebRTC.SDP do
     Enum.reduce(codecs, media, fn attr, media -> Media.add_attribute(media, attr) end)
   end
 
-  defp add_extensions(media, :audio, _pt) do
-    media
-  end
+  defp add_extensions(media, :audio, _pt), do: media
 
   defp add_extensions(media, :video, pt) do
     Enum.reduce(pt, media, fn pt, media ->
