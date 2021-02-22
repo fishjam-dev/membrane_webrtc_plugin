@@ -37,9 +37,7 @@ defmodule Membrane.WebRTC.SDP do
     |> add_tracks(tracks_data, config)
   end
 
-  defp get_tracks_data(tracks, direction) do
-    Enum.map(tracks, &%{track: &1, direction: direction})
-  end
+  defp get_tracks_data(tracks, direction), do: Enum.map(tracks, &%{track: &1, direction: direction})
 
   defp add_tracks(sdp, tracks_data, config) do
     tracks_data
