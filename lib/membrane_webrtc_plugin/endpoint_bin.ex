@@ -1,7 +1,8 @@
 defmodule Membrane.WebRTC.EndpointBin do
   use Membrane.Bin
 
-  alias Membrane.WebRTC.Track
+  alias ExSDP.Media
+  alias Membrane.WebRTC.{SDP, Track}
 
   require Membrane.Logger
 
@@ -14,9 +15,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     options: [encoding: []]
 
   def_output_pad :output, demand_unit: :buffers, caps: :any, availability: :on_request
-
-  alias Membrane.WebRTC.SDP
-  alias ExSDP.Media
 
   @impl true
   def handle_init(opts) do
