@@ -43,30 +43,22 @@ defmodule Membrane.WebRTC.SDP do
       }
     }
 
-    inbound_tracks = Keyword.fetch!(opts, :inbound_tracks)
-    outbound_tracks = Keyword.fetch!(opts, :outbound_tracks)
-
-    tracks_data =
-      generate_tracks_data(inbound_tracks, :recvonly) ++
-        generate_tracks_data(outbound_tracks, :sendonly)
-
-    tracks_data = Enum.sort_by(tracks_data, & &1.track.timestamp)
-    bundle_group = Enum.map(tracks_data, & &1.track.id)
+    # TODO verify if sorting tracks this way allows for adding inbound tracks in updated offer
+    inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
+    outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
+    bundle_group = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
     |> ExSDP.add_attribute({:group, {:BUNDLE, bundle_group}})
-    |> add_tracks(tracks_data, config)
+    |> add_tracks(inbound_tracks, :recvonly, config)
+    |> add_tracks(outbound_tracks, :sendonly, config)
   end
 
-  defp generate_tracks_data(tracks, direction) do
-    Enum.map(tracks, &%{track: &1, direction: direction})
+  defp add_tracks(sdp, tracks, direction, config) do
+    ExSDP.add_media(sdp, Enum.map(tracks, &create_sdp_media(&1, direction, config)))
   end
 
-  defp add_tracks(sdp, tracks_data, config) do
-    ExSDP.add_media(sdp, Enum.map(tracks_data, &create_sdp_media(&1, config)))
-  end
-
-  defp create_sdp_media(%{track: track, direction: direction}, config) do
+  defp create_sdp_media(track, direction, config) do
     codecs = config.codecs[track.type]
     payload_types = get_payload_types(codecs)
 
