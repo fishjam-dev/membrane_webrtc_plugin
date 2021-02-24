@@ -30,6 +30,7 @@ defmodule Membrane.WebRTC.SDP do
       get_tracks_data(inbound_tracks, :recvonly) ++
         get_tracks_data(outbound_tracks, :sendonly)
 
+    tracks_data = Enum.sort_by(tracks_data, & &1.track.timestamp)
     bundle_group = Enum.map(tracks_data, & &1.track.id)
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
@@ -40,9 +41,7 @@ defmodule Membrane.WebRTC.SDP do
   defp get_tracks_data(tracks, direction), do: Enum.map(tracks, &%{track: &1, direction: direction})
 
   defp add_tracks(sdp, tracks_data, config) do
-    tracks_data
-    |> Enum.sort_by(& &1.track.timestamp)
-    |> Enum.reduce(sdp, fn track_data, sdp ->
+    Enum.reduce(tracks_data, sdp, fn track_data, sdp ->
       ExSDP.add_media(sdp, create_sdp_media(track_data, config))
     end)
   end
@@ -55,7 +54,7 @@ defmodule Membrane.WebRTC.SDP do
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_types)
       | connection_data: %ConnectionData{address: {0, 0, 0, 0}}
     }
-    |> Media.add_attribute(if track.enabled?, do: direction, else: :recvonly)
+    |> Media.add_attribute(if track.enabled?, do: direction, else: :inactive)
     |> Media.add_attribute({:ice_ufrag, config.ice_ufrag})
     |> Media.add_attribute({:ice_pwd, config.ice_pwd})
     |> Media.add_attribute({:ice_options, "trickle"})
