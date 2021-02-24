@@ -3,13 +3,33 @@ defmodule Membrane.WebRTC.SDP do
   Module containing helper functions for creating SPD offer.
   """
 
-  alias ExSDP.Attribute.{RTPMapping, Msid, Fmtp, Ssrc}
+  alias ExSDP.Attribute.{RTPMapping, MSID, FMTP, SSRC}
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.RTP.PayloadFormat
   alias Membrane.WebRTC.Track
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
+  @doc """
+  Creates Unified Plan SDP offer.
+
+  The mandatory options are:
+  - ice_ufrag - ICE username fragment
+  - ice_pwd - ICE password
+  - fingerprint - DTLS fingerprint
+
+  Additionally accepts audio_codecs and video_codecs options,
+  that should contain lists of SDP attributes for desired codecs.
+  Both lists are empty by default, while Opus and H264 codecs'
+  attributes are appended to audio and video, respectively.
+  """
+  @spec create_offer(
+          ice_ufrag: String.t(),
+          ice_pwd: String.t(),
+          fingerprint: fingerprint(),
+          audio_codecs: [ExSDP.Attribute.t()],
+          video_codecs: [ExSDP.Attribute.t()]
+        ) :: ExSDP.t()
   def create_offer(opts) do
     fmt_mappings = Keyword.get(opts, :fmt_mappings, %{})
 
@@ -52,7 +72,7 @@ defmodule Membrane.WebRTC.SDP do
 
     %Media{
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_types)
-      | connection_data: %ConnectionData{address: {0, 0, 0, 0}}
+      | connection_data: [%ConnectionData{address: {0, 0, 0, 0}}]
     }
     |> Media.add_attributes([
       if(track.enabled?, do: direction, else: :inactive),
@@ -62,7 +82,7 @@ defmodule Membrane.WebRTC.SDP do
       {:fingerprint, config.fingerprint},
       {:setup, :actpass},
       {:mid, track.id},
-      Msid.new(track.stream_id),
+      MSID.new(track.stream_id),
       :rtcp_mux
     ])
     |> Media.add_attributes(codecs)
@@ -81,7 +101,7 @@ defmodule Membrane.WebRTC.SDP do
   defp add_ssrc(media, %Track{ssrc: nil}), do: media
 
   defp add_ssrc(media, track),
-    do: Media.add_attribute(media, %Ssrc{id: track.ssrc, attribute: "cname", value: track.name})
+    do: Media.add_attribute(media, %SSRC{id: track.ssrc, attribute: "cname", value: track.name})
 
   defp get_payload_types(codecs) do
     Enum.flat_map(codecs, fn
@@ -95,7 +115,7 @@ defmodule Membrane.WebRTC.SDP do
     %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
     pt = Map.get(fmt_mappings, :OPUS, pt)
     rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", params: 2, payload_type: pt}
-    fmtp = %Fmtp{pt: pt, useinbandfec: true}
+    fmtp = %FMTP{pt: pt, useinbandfec: true}
     [rtp_mapping, fmtp]
   end
 
@@ -105,7 +125,7 @@ defmodule Membrane.WebRTC.SDP do
     pt = Map.get(fmt_mappings, :H264, pt)
     rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", payload_type: pt}
 
-    fmtp = %Fmtp{
+    fmtp = %FMTP{
       pt: pt,
       level_asymmetry_allowed: true,
       packetization_mode: 1,
