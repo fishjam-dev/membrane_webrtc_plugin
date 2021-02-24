@@ -37,7 +37,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
   defp deps do
     [
       {:membrane_core, "~> 0.6.0"},
-      {:ex_sdp, github: "membraneframework/ex_sdp", branch: "webrtc-plugin"},
+      {:ex_sdp, github: "membraneframework/ex_sdp"},
       {:membrane_rtp_format, "~> 0.3.0"},
       {:membrane_rtp_h264_plugin, "~> 0.4.0"},
       {:membrane_rtp_opus_plugin, "~> 0.2.0"},

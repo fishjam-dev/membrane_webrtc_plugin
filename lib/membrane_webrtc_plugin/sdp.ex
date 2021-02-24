@@ -27,8 +27,8 @@ defmodule Membrane.WebRTC.SDP do
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks)
 
     tracks_data =
-      get_tracks_data(inbound_tracks, :recvonly) ++
-        get_tracks_data(outbound_tracks, :sendonly)
+      generate_tracks_data(inbound_tracks, :recvonly) ++
+        generate_tracks_data(outbound_tracks, :sendonly)
 
     tracks_data = Enum.sort_by(tracks_data, & &1.track.timestamp)
     bundle_group = Enum.map(tracks_data, & &1.track.id)
@@ -38,12 +38,12 @@ defmodule Membrane.WebRTC.SDP do
     |> add_tracks(tracks_data, config)
   end
 
-  defp get_tracks_data(tracks, direction), do: Enum.map(tracks, &%{track: &1, direction: direction})
+  defp generate_tracks_data(tracks, direction) do
+    Enum.map(tracks, &%{track: &1, direction: direction})
+  end
 
   defp add_tracks(sdp, tracks_data, config) do
-    Enum.reduce(tracks_data, sdp, fn track_data, sdp ->
-      ExSDP.add_media(sdp, create_sdp_media(track_data, config))
-    end)
+    ExSDP.add_media(sdp, Enum.map(tracks_data, &create_sdp_media(&1, config)))
   end
 
   defp create_sdp_media(%{track: track, direction: direction}, config) do
@@ -54,30 +54,27 @@ defmodule Membrane.WebRTC.SDP do
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_types)
       | connection_data: %ConnectionData{address: {0, 0, 0, 0}}
     }
-    |> Media.add_attribute(if track.enabled?, do: direction, else: :inactive)
-    |> Media.add_attribute({:ice_ufrag, config.ice_ufrag})
-    |> Media.add_attribute({:ice_pwd, config.ice_pwd})
-    |> Media.add_attribute({:ice_options, "trickle"})
-    |> Media.add_attribute({:fingerprint, config.fingerprint})
-    |> Media.add_attribute({:setup, :actpass})
-    |> Media.add_attribute({:mid, track.id})
-    |> Media.add_attribute(Msid.new(track.stream_id))
-    |> Media.add_attribute(:rtcp_mux)
-    |> add_codecs(codecs)
+    |> Media.add_attributes([
+      if(track.enabled?, do: direction, else: :inactive),
+      {:ice_ufrag, config.ice_ufrag},
+      {:ice_pwd, config.ice_pwd},
+      {:ice_options, "trickle"},
+      {:fingerprint, config.fingerprint},
+      {:setup, :actpass},
+      {:mid, track.id},
+      Msid.new(track.stream_id),
+      :rtcp_mux
+    ])
+    |> Media.add_attributes(codecs)
     |> add_extensions(track.type, payload_types)
     |> add_ssrc(track)
-  end
-
-  defp add_codecs(media, codecs) do
-    Enum.reduce(codecs, media, fn attr, media -> Media.add_attribute(media, attr) end)
   end
 
   defp add_extensions(media, :audio, _pt), do: media
 
   defp add_extensions(media, :video, pt) do
-    Enum.reduce(pt, media, fn pt, media ->
-      Media.add_attribute(media, "rtcp-fb:#{pt} ccm fir")
-    end)
+    media
+    |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} ccm fir"))
     |> Media.add_attribute(:rtcp_rsize)
   end
 
