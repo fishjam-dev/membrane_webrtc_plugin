@@ -4,7 +4,7 @@
 [![API Docs](https://img.shields.io/badge/api-docs-yellow.svg?style=flat)](https://hexdocs.pm/membrane_webrtc_plugin)
 [![CircleCI](https://circleci.com/gh/membraneframework/membrane_webrtc_plugin.svg?style=svg)](https://circleci.com/gh/membraneframework/membrane_webrtc_plugin)
 
-WIP
+Plugin for sending and receiving media with WebRTC.
 
 It is part of [Membrane Multimedia Framework](https://membraneframework.org).
 

@@ -19,9 +19,15 @@ defmodule Membrane.WebRTC.SDP do
   - fingerprint - DTLS fingerprint
 
   Additionally accepts audio_codecs and video_codecs options,
-  that should contain lists of SDP attributes for desired codecs.
-  Both lists are empty by default, while Opus and H264 codecs'
-  attributes are appended to audio and video, respectively.
+  that should contain lists of SDP attributes for desired codecs,
+  for example:
+
+      video_codecs: [
+        %RTPMapping{payload_type: 98, encoding: "VP9", clock_rate: 90_000}
+      ]
+
+  Both lists are empty by default, while Opus and H264 attributes
+  are appended to audio and video, respectively.
   """
   @spec create_offer(
           ice_ufrag: String.t(),
