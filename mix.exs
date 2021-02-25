@@ -14,7 +14,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       deps: deps(),
 
       # hex
-      description: "TODO",
+      description: "Plugin for sending and receiving media with WebRTC",
       package: package(),
 
       # docs
