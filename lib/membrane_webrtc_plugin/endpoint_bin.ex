@@ -148,7 +148,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         fingerprint: state.dtls_fingerprint
       )
 
-    IO.puts(offer)
+    Membrane.Logger.debug(offer)
 
     actions =
       [notify: {:signal, {:sdp_offer, to_string(offer)}}] ++
