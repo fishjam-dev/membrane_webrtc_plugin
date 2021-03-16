@@ -6,7 +6,21 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   require Membrane.Logger
 
-  def_options inbound_tracks: [], outbound_tracks: []
+  def_options inbound_tracks: [
+                type: :list,
+                default: [],
+                description: "List of initial inbound tracks"
+              ],
+              outbound_tracks: [
+                type: :list,
+                default: [],
+                description: "List of initial outbound tracks"
+              ],
+              stun_servers: [
+                type: [:string],
+                default: [],
+                description: "List of stun servers"
+              ]
 
   def_input_pad :input,
     demand_unit: :buffers,
@@ -20,7 +34,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_init(opts) do
     children = %{
       ice: %Membrane.ICE.Bin{
-        stun_servers: ["64.233.161.127:19302"],
+        stun_servers: opts.stun_servers,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: [client_mode: false, dtls_srtp: true]
