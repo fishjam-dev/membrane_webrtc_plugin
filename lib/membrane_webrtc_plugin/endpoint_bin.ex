@@ -1,4 +1,10 @@
 defmodule Membrane.WebRTC.EndpointBin do
+  @moduledoc """
+  Module responsible for interacting with WebRTC peer.
+
+  All streams received from a peer are conveyed on bin's output pads whereas all streams incoming on
+  bin's input pads are sent to the peer.
+  """
   use Membrane.Bin
 
   alias ExSDP.Media
@@ -17,9 +23,16 @@ defmodule Membrane.WebRTC.EndpointBin do
                 description: "List of initial outbound tracks"
               ],
               stun_servers: [
-                type: [:string],
+                type: :list,
+                spec: [ExLibnice.stun_server()],
                 default: [],
                 description: "List of stun servers"
+              ],
+              turn_servers: [
+                type: :list,
+                spec: [ExLibnice.relay_info()],
+                default: [],
+                description: "List of turn servers"
               ]
 
   def_input_pad :input,
@@ -35,6 +48,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     children = %{
       ice: %Membrane.ICE.Bin{
         stun_servers: opts.stun_servers,
+        turn_servers: opts.turn_servers,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: [client_mode: false, dtls_srtp: true]
