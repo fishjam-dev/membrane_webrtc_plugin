@@ -7,7 +7,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   use Membrane.Bin
 
-  alias ExSDP.Media
+  alias ExSDP.{Attribute.SSRC, Media}
   alias Membrane.WebRTC.{SDP, Track}
 
   require Membrane.Logger
@@ -151,8 +151,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_notification({:new_rtp_stream, ssrc, pt}, _from, _ctx, state) do
     %{encoding_name: encoding} = Membrane.RTP.PayloadFormat.get_payload_type_mapping(pt)
-    type = if encoding == :OPUS, do: :audio, else: :video
-    track = state.inbound_tracks |> Map.values() |> Enum.find(&(&1.type == type))
+    mid = Map.fetch!(state.ssrc_to_mid, ssrc)
+    track = Map.fetch!(state.inbound_tracks, mid)
     track = %Track{track | ssrc: ssrc, encoding: encoding}
     state = put_in(state, [:inbound_tracks, track.id], track)
     {{:ok, notify: {:new_track, track.id, encoding}}, state}
@@ -205,8 +205,22 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_other({:signal, {:sdp_answer, sdp}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
+
+    ssrc_to_mid =
+      sdp.media
+      |> Enum.filter(&(:sendonly in &1.attributes))
+      |> Enum.map(fn media ->
+        {:mid, mid} = Media.get_attribute(media, :mid)
+        %SSRC{id: ssrc} = Media.get_attribute(media, SSRC)
+
+        {ssrc, mid}
+      end)
+      |> Enum.into(%{})
+
     remote_credentials = get_remote_credentials(sdp)
-    {{:ok, forward: {:ice, {:set_remote_credentials, remote_credentials}}}, state}
+
+    {{:ok, forward: {:ice, {:set_remote_credentials, remote_credentials}}},
+     Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
   end
 
   @impl true
