@@ -58,8 +58,8 @@ defmodule Membrane.RTPVAD do
   def handle_init(opts) do
     state = %{
       audio_levels: Qex.new(),
-      vad: false,
-      vad_false_timer: get_time(),
+      vad: :silence,
+      vad_silence_timer: get_time(),
       time_window: opts.time_window,
       min_packet_num: opts.min_packet_num,
       vad_threshold: opts.vad_threshold,
@@ -81,7 +81,7 @@ defmodule Membrane.RTPVAD do
 
     audio_levels = filter(state.audio_levels, buffer.metadata.timestamp, state.time_window)
     audio_levels = Qex.push(audio_levels, {-1 * level, buffer.metadata.timestamp})
-    new_vad = avg(fill(Enum.to_list(audio_levels), state.min_packet_num)) >= state.vad_threshold
+    new_vad = get_current_vad(audio_levels, state)
     actions = [buffer: {:output, buffer}] ++ maybe_notify(new_vad, state)
     state = update_state(audio_levels, new_vad, state)
     {{:ok, actions}, state}
@@ -92,6 +92,11 @@ defmodule Membrane.RTPVAD do
       current_timestamp - timestamp > time_window
     end)
     |> Enum.into(%Qex{})
+  end
+
+  defp get_current_vad(audio_levels, state) do
+    audio_levels = fill(Enum.to_list(audio_levels), state.min_packet_num)
+    if avg(audio_levels) >= state.vad_threshold, do: :speech, else: :silence
   end
 
   defp fill(audio_levels, num) when is_list(audio_levels) do
@@ -106,7 +111,7 @@ defmodule Membrane.RTPVAD do
   end
 
   defp maybe_notify(new_vad, state) do
-    if vad_false?(new_vad, state) or vad_true?(new_vad, state) do
+    if vad_silence?(new_vad, state) or vad_speech?(new_vad, state) do
       [notify: {:vad, new_vad}]
     else
       []
@@ -115,11 +120,11 @@ defmodule Membrane.RTPVAD do
 
   defp update_state(audio_levels, new_vad, state) do
     cond do
-      vad_maybe_false?(new_vad, state) ->
-        Map.merge(state, %{vad: :maybe_false, vad_false_timer: get_time()})
+      vad_maybe_silence?(new_vad, state) ->
+        Map.merge(state, %{vad: :maybe_silence, vad_silence_timer: get_time()})
 
-      vad_false?(new_vad, state) or vad_true?(new_vad, state) or
-          (state.vad == :maybe_false and new_vad == true) ->
+      vad_silence?(new_vad, state) or vad_speech?(new_vad, state) or
+          (state.vad == :maybe_silence and new_vad == :speech) ->
         Map.merge(state, %{vad: new_vad})
 
       true ->
@@ -128,14 +133,14 @@ defmodule Membrane.RTPVAD do
     |> Map.put(:audio_levels, audio_levels)
   end
 
-  defp vad_false?(new_vad, state),
-    do: state.vad == :maybe_false and new_vad == false and timer_expired?(state)
+  defp vad_silence?(new_vad, state),
+    do: state.vad == :maybe_silence and new_vad == :silence and timer_expired?(state)
 
-  defp vad_true?(new_vad, state), do: state.vad == false and new_vad == true
+  defp vad_speech?(new_vad, state), do: state.vad == :silence and new_vad == :speech
 
-  defp vad_maybe_false?(new_vad, state), do: state.vad == true and new_vad == false
+  defp vad_maybe_silence?(new_vad, state), do: state.vad == :speech and new_vad == :silence
 
   defp get_time(), do: System.monotonic_time(:millisecond)
 
-  defp timer_expired?(state), do: get_time() - state.vad_false_timer > state.vad_silence_time
+  defp timer_expired?(state), do: get_time() - state.vad_silence_timer > state.vad_silence_time
 end
