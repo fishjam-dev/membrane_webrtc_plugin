@@ -2,11 +2,11 @@ defmodule Membrane.RTPVAD do
   @moduledoc """
   Simple vad based on audio level sent in RTP header.
 
-  If avg of audio level in last 50 packets exceeds some threshold it emits
+  If avg of audio level in packets in `time_window` exceeds `vad_threshold` it emits
   notification `{:vad, true}`.
 
-  When avg fall below threshold and doesn't exceeds it in the next 300ms it emits
-  notification `{:vad, false}`.
+  When avg falls below `vad_threshold` and doesn't exceed it in the next `vad_silence_timer`
+  it emits notification `{:vad, false}`.
   """
   use Membrane.Filter
 
@@ -19,16 +19,54 @@ defmodule Membrane.RTPVAD do
     availability: :always,
     caps: :any
 
+  def_options time_window: [
+                spec: pos_integer(),
+                default: 2_000_000_000,
+                description: "Time window (in `ns`) in which avg audio level is measured."
+              ],
+              min_packet_num: [
+                spec: pos_integer(),
+                default: 50,
+                description: """
+                Minimal number of packets to count avg audio level from.
+                If e.g. there is only one packet in last `time_window` then to count avg audio level
+                packets representing digital silence will be taken in number equal to
+                `min_packet_num - 1`
+                """
+              ],
+              vad_threshold: [
+                spec: -127..0,
+                default: -50,
+                description: """
+                Audio level in dBov representing vad threshold.
+                Values below are considered to represent voice activity.
+                Value -127 represents digital silence.
+                """
+              ],
+              vad_silence_time: [
+                spec: pos_integer(),
+                default: 300,
+                description: """
+                Time to wait before emitting notification `{:vad, false}` after audio track is
+                no longer considered to represent speech.
+                If at this time audio track is considered to represent speech again the notification
+                `{:vad, false}` will not be sent.
+                """
+              ]
+
   @impl true
-  def handle_init(_opts) do
-    {:ok,
-     %{
-       audio_levels: Qex.new(),
-       vad: false,
-       vad_false_timer: get_time(),
-       # ns
-       time_window: 2_000_000_000
-     }}
+  def handle_init(opts) do
+    state = %{
+      audio_levels: Qex.new(),
+      vad: false,
+      vad_false_timer: get_time(),
+      time_window: opts.time_window,
+      min_packet_num: opts.min_packet_num,
+      vad_threshold: opts.vad_threshold,
+      vad_silence_time: opts.vad_silence_time
+    }
+
+    {:ok, state}
   end
 
   @impl true
@@ -42,8 +80,8 @@ defmodule Membrane.RTPVAD do
       buffer.metadata.rtp.extension.data
 
     audio_levels = filter(state.audio_levels, buffer.metadata.timestamp, state.time_window)
-    audio_levels = Qex.push(audio_levels, {level, buffer.metadata.timestamp})
-    new_vad = avg(fill(Enum.to_list(audio_levels), 50)) < 50
+    audio_levels = Qex.push(audio_levels, {-1 * level, buffer.metadata.timestamp})
+    new_vad = avg(fill(Enum.to_list(audio_levels), state.min_packet_num)) >= state.vad_threshold
     actions = [buffer: {:output, buffer}] ++ maybe_notify(new_vad, state)
     state = update_state(audio_levels, new_vad, state)
     {{:ok, actions}, state}
@@ -60,7 +98,7 @@ defmodule Membrane.RTPVAD do
     # add audio levels representing digital silence if there are
     # not enough regular audio levels
     num = max(num - length(audio_levels), 0)
-    audio_levels ++ List.duplicate({127, 0}, num)
+    audio_levels ++ List.duplicate({-127, 0}, num)
   end
 
   defp avg(list) when is_list(list) do
@@ -99,5 +137,5 @@ defmodule Membrane.RTPVAD do
 
   defp get_time(), do: System.monotonic_time(:millisecond)
 
-  defp timer_expired?(state), do: get_time() - state.vad_false_timer > 300
+  defp timer_expired?(state), do: get_time() - state.vad_false_timer > state.vad_silence_time
 end
