@@ -2,10 +2,10 @@ defmodule Membrane.RTPVAD do
   @moduledoc """
   Simple vad based on audio level sent in RTP header.
 
-  If avg of audio level in last 50 packets exceeds some treshold it emits
-  notification `{:vad, true}`. 
+  If avg of audio level in last 50 packets exceeds some threshold it emits
+  notification `{:vad, true}`.
 
-  When avg fall below treshold and doesn't exceeds it in the next 300ms it emits
+  When avg fall below threshold and doesn't exceeds it in the next 300ms it emits
   notification `{:vad, false}`.
   """
   use Membrane.Filter
@@ -23,9 +23,11 @@ defmodule Membrane.RTPVAD do
   def handle_init(_opts) do
     {:ok,
      %{
-       audio_levels: :queue.from_list(List.duplicate(127, 50)),
+       audio_levels: Qex.new(),
        vad: false,
-       vad_false_timer: get_time()
+       vad_false_timer: get_time(),
+       # ns
+       time_window: 2_000_000_000
      }}
   end
 
@@ -39,17 +41,30 @@ defmodule Membrane.RTPVAD do
     <<_id::4, _len::4, _v::1, level::7, _rest::binary-size(2)>> =
       buffer.metadata.rtp.extension.data
 
-    audio_levels = state.audio_levels
-    {_val, audio_levels} = :queue.out_r(audio_levels)
-    audio_levels = :queue.in_r(level, audio_levels)
-    new_vad = avg(:queue.to_list(audio_levels)) < 50
+    audio_levels = filter(state.audio_levels, buffer.metadata.timestamp, state.time_window)
+    audio_levels = Qex.push(audio_levels, {level, buffer.metadata.timestamp})
+    new_vad = avg(fill(Enum.to_list(audio_levels), 50)) < 50
     actions = [buffer: {:output, buffer}] ++ maybe_notify(new_vad, state)
     state = update_state(audio_levels, new_vad, state)
     {{:ok, actions}, state}
   end
 
+  defp filter(audio_levels, current_timestamp, time_window) do
+    Enum.drop_while(audio_levels, fn {_level, timestamp} ->
+      current_timestamp - timestamp > time_window
+    end)
+    |> Enum.into(%Qex{})
+  end
+
+  defp fill(audio_levels, num) when is_list(audio_levels) do
+    # add audio levels representing digital silence if there are
+    # not enough regular audio levels
+    num = max(num - length(audio_levels), 0)
+    audio_levels ++ List.duplicate({127, 0}, num)
+  end
+
   defp avg(list) when is_list(list) do
-    Enum.reduce(list, 0, fn x, acc -> x + acc end) / length(list)
+    Enum.reduce(list, 0, fn {level, _timestamp}, acc -> level + acc end) / length(list)
   end
 
   defp maybe_notify(new_vad, state) do

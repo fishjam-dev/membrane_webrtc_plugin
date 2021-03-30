@@ -11,7 +11,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias Membrane.WebRTC.{SDP, Track}
 
   require Membrane.Logger
-  require Logger
 
   def_options inbound_tracks: [
                 type: :list,
