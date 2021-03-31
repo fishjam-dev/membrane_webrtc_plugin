@@ -39,7 +39,7 @@ defmodule Membrane.RTPVAD do
                 default: -50,
                 description: """
                 Audio level in dBov representing vad threshold.
-                Values below are considered to represent voice activity.
+                Values above are considered to represent voice activity.
                 Value -127 represents digital silence.
                 """
               ],
