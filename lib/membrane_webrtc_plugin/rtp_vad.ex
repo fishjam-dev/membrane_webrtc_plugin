@@ -59,7 +59,8 @@ defmodule Membrane.RTPVAD do
     state = %{
       audio_levels: Qex.new(),
       vad: :silence,
-      vad_silence_timer: get_time(),
+      vad_silence_timestamp: 0,
+      current_timestamp: 0,
       time_window: opts.time_window,
       min_packet_num: opts.min_packet_num,
       vad_threshold: opts.vad_threshold,
@@ -79,6 +80,7 @@ defmodule Membrane.RTPVAD do
     <<_id::4, _len::4, _v::1, level::7, _rest::binary-size(2)>> =
       buffer.metadata.rtp.extension.data
 
+    state = %{state | current_timestamp: buffer.metadata.timestamp}
     audio_levels = filter(state.audio_levels, buffer.metadata.timestamp, state.time_window)
     audio_levels = Qex.push(audio_levels, {-1 * level, buffer.metadata.timestamp})
     new_vad = get_current_vad(audio_levels, state)
@@ -121,7 +123,7 @@ defmodule Membrane.RTPVAD do
   defp update_state(audio_levels, new_vad, state) do
     cond do
       vad_maybe_silence?(new_vad, state) ->
-        Map.merge(state, %{vad: :maybe_silence, vad_silence_timer: get_time()})
+        Map.merge(state, %{vad: :maybe_silence, vad_silence_timestamp: state.current_timestamp})
 
       vad_silence?(new_vad, state) or vad_speech?(new_vad, state) or
           (state.vad == :maybe_silence and new_vad == :speech) ->
@@ -140,7 +142,6 @@ defmodule Membrane.RTPVAD do
 
   defp vad_maybe_silence?(new_vad, state), do: state.vad == :speech and new_vad == :silence
 
-  defp get_time(), do: System.monotonic_time(:millisecond)
-
-  defp timer_expired?(state), do: get_time() - state.vad_silence_timer > state.vad_silence_time
+  defp timer_expired?(state),
+    do: state.current_timestamp - state.vad_silence_timestamp > state.vad_silence_time
 end
