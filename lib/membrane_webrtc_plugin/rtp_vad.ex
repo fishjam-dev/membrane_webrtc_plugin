@@ -29,9 +29,7 @@ defmodule Membrane.RTPVAD do
                 default: 50,
                 description: """
                 Minimal number of packets to count avg audio level from.
-                If e.g. there is only one packet in last `time_window` then to count avg audio level
-                packets representing digital silence will be taken in number equal to
-                `min_packet_num - 1`
+                Speech won't be detected until there are enough packets.
                 """
               ],
               vad_threshold: [
@@ -64,7 +62,9 @@ defmodule Membrane.RTPVAD do
       time_window: opts.time_window,
       min_packet_num: opts.min_packet_num,
       vad_threshold: opts.vad_threshold,
-      vad_silence_time: opts.vad_silence_time
+      vad_silence_time: opts.vad_silence_time,
+      audio_levels_sum: 0,
+      audio_levels_count: 0
     }
 
     {:ok, state}
@@ -81,36 +81,44 @@ defmodule Membrane.RTPVAD do
       buffer.metadata.rtp.extension.data
 
     state = %{state | current_timestamp: buffer.metadata.timestamp}
-    audio_levels = filter(state.audio_levels, buffer.metadata.timestamp, state.time_window)
-    audio_levels = Qex.push(audio_levels, {-1 * level, buffer.metadata.timestamp})
-    new_vad = get_current_vad(audio_levels, state)
+    state = filter_old_audio_levels(state)
+    state = add_new_audio_level(state, level)
+    new_vad = get_new_vad(audio_levels, state)
     actions = [buffer: {:output, buffer}] ++ maybe_notify(new_vad, state)
-    state = update_state(audio_levels, new_vad, state)
+    state = update_state(new_vad, state)
     {{:ok, actions}, state}
   end
 
-  defp filter(audio_levels, current_timestamp, time_window) do
-    Enum.drop_while(audio_levels, fn {_level, timestamp} ->
-      current_timestamp - timestamp > time_window
+  defp filter_old_audio_levels(state) do
+    Enum.reduce_while(state.audio_levels, state, fn {level, timestamp}, state ->
+      if state.current_timestamp - timestamp > state.time_window do
+        {_level, audio_levels} = Qex.pop(state.audio_levels)
+        state = %{state | audio_levels_sum: state.audio_levels_sum - level}
+        state = %{state | audio_levels_count: state.audio_levels_count - 1}
+        state = %{state | audio_levels: audio_levels}
+        {:cont, state}
+      else
+        {:halt, state}
+      end
     end)
-    |> Enum.into(%Qex{})
   end
 
-  defp get_current_vad(audio_levels, state) do
-    audio_levels = fill(Enum.to_list(audio_levels), state.min_packet_num)
-    if avg(audio_levels) >= state.vad_threshold, do: :speech, else: :silence
+  defp add_new_audio_level(state, level) do
+    audio_levels = Qex.push(state.audio_levels, {-1 * level, state.current_timestamp})
+    state = %{state | audio_levels_sum: state.audio_levels_sum + level}
+    state = %{state | audio_levels_count: state.audio_levels_count + 1}
   end
 
-  defp fill(audio_levels, num) when is_list(audio_levels) do
-    # add audio levels representing digital silence if there are
-    # not enough regular audio levels
-    num = max(num - length(audio_levels), 0)
-    audio_levels ++ List.duplicate({-127, 0}, num)
+  defp get_new_vad(audio_levels, state) do
+    if Enum.count(audio_levels >= state.min_packet_num) do
+      if avg(audio_levels) >= state.vad_threshold, do: :speech, else: :silence
+    else
+      # if there aren't enough packets assume silence
+      :silence
+    end
   end
 
-  defp avg(list) when is_list(list) do
-    Enum.reduce(list, 0, fn {level, _timestamp}, acc -> level + acc end) / length(list)
-  end
+  defp avg(state), do: state.audio_levels_sum / state.audio_levels_count
 
   defp maybe_notify(new_vad, state) do
     if vad_silence?(new_vad, state) or vad_speech?(new_vad, state) do
@@ -120,7 +128,7 @@ defmodule Membrane.RTPVAD do
     end
   end
 
-  defp update_state(audio_levels, new_vad, state) do
+  defp update_state(new_vad, state) do
     cond do
       vad_maybe_silence?(new_vad, state) ->
         Map.merge(state, %{vad: :maybe_silence, vad_silence_timestamp: state.current_timestamp})
@@ -132,7 +140,6 @@ defmodule Membrane.RTPVAD do
       true ->
         state
     end
-    |> Map.put(:audio_levels, audio_levels)
   end
 
   defp vad_silence?(new_vad, state),
