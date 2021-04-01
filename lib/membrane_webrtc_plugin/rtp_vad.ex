@@ -83,7 +83,7 @@ defmodule Membrane.RTPVAD do
     state = %{state | current_timestamp: buffer.metadata.timestamp}
     state = filter_old_audio_levels(state)
     state = add_new_audio_level(state, level)
-    new_vad = get_new_vad(audio_levels, state)
+    new_vad = get_new_vad(state)
     actions = [buffer: {:output, buffer}] ++ maybe_notify(new_vad, state)
     state = update_state(new_vad, state)
     {{:ok, actions}, state}
@@ -104,14 +104,15 @@ defmodule Membrane.RTPVAD do
   end
 
   defp add_new_audio_level(state, level) do
-    audio_levels = Qex.push(state.audio_levels, {-1 * level, state.current_timestamp})
-    state = %{state | audio_levels_sum: state.audio_levels_sum + level}
-    state = %{state | audio_levels_count: state.audio_levels_count + 1}
+    audio_levels = Qex.push(state.audio_levels, {-level, state.current_timestamp})
+    state = %{state | audio_levels: audio_levels}
+    state = %{state | audio_levels_sum: state.audio_levels_sum + -level}
+    %{state | audio_levels_count: state.audio_levels_count + 1}
   end
 
-  defp get_new_vad(audio_levels, state) do
-    if Enum.count(audio_levels >= state.min_packet_num) do
-      if avg(audio_levels) >= state.vad_threshold, do: :speech, else: :silence
+  defp get_new_vad(state) do
+    if Enum.count(state.audio_levels) >= state.min_packet_num do
+      if avg(state) >= state.vad_threshold, do: :speech, else: :silence
     else
       # if there aren't enough packets assume silence
       :silence
