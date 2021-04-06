@@ -83,9 +83,9 @@ defmodule Membrane.RTPVAD do
     state = %{state | current_timestamp: buffer.metadata.timestamp}
     state = filter_old_audio_levels(state)
     state = add_new_audio_level(state, level)
-    new_vad = get_new_vad(state)
-    actions = [buffer: {:output, buffer}] ++ maybe_notify(new_vad, state)
-    state = update_state(new_vad, state)
+    audio_levels_vad = get_audio_levels_vad(state)
+    actions = [buffer: {:output, buffer}] ++ maybe_notify(audio_levels_vad, state)
+    state = update_state(audio_levels_vad, state)
     {{:ok, actions}, state}
   end
 
@@ -110,7 +110,7 @@ defmodule Membrane.RTPVAD do
     %{state | audio_levels_count: state.audio_levels_count + 1}
   end
 
-  defp get_new_vad(state) do
+  defp get_audio_levels_vad(state) do
     if Enum.count(state.audio_levels) >= state.min_packet_num do
       if avg(state) >= state.vad_threshold, do: :speech, else: :silence
     else
@@ -129,26 +129,27 @@ defmodule Membrane.RTPVAD do
     end
   end
 
-  defp update_state(new_vad, state) do
+  defp update_state(audio_levels_vad, state) do
     cond do
-      vad_maybe_silence?(new_vad, state) ->
+      vad_maybe_silence?(audio_levels_vad, state) ->
         Map.merge(state, %{vad: :maybe_silence, vad_silence_timestamp: state.current_timestamp})
 
-      vad_silence?(new_vad, state) or vad_speech?(new_vad, state) or
-          (state.vad == :maybe_silence and new_vad == :speech) ->
-        Map.merge(state, %{vad: new_vad})
+      !vad_silence?(audio_levels_vad, state) ->
+        state
 
       true ->
-        state
+        Map.merge(state, %{vad: audio_levels_vad})
     end
   end
 
-  defp vad_silence?(new_vad, state),
-    do: state.vad == :maybe_silence and new_vad == :silence and timer_expired?(state)
+  defp vad_silence?(audio_levels_vad, state),
+    do: state.vad == :maybe_silence and audio_levels_vad == :silence and timer_expired?(state)
 
-  defp vad_speech?(new_vad, state), do: state.vad == :silence and new_vad == :speech
+  defp vad_speech?(audio_levels_vad, state),
+    do: state.vad == :silence and audio_levels_vad == :speech
 
-  defp vad_maybe_silence?(new_vad, state), do: state.vad == :speech and new_vad == :silence
+  defp vad_maybe_silence?(audio_levels_vad, state),
+    do: state.vad == :speech and audio_levels_vad == :silence
 
   defp timer_expired?(state),
     do: state.current_timestamp - state.vad_silence_timestamp > state.vad_silence_time
