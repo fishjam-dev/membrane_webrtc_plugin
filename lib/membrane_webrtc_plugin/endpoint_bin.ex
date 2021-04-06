@@ -136,10 +136,17 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_pad_added(Pad.ref(:output, track_id) = pad, _ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
+    extensions = if encoding == :OPUS, do: [:vad], else: []
 
-    if encoding == :OPUS,
-      do: handle_audio_track(ssrc, encoding, pad, state),
-      else: handle_video_track(ssrc, encoding, pad, state)
+    spec = %ParentSpec{
+      links: [
+        link(:rtp)
+        |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding, extensions: extensions])
+        |> to_bin_output(pad)
+      ]
+    }
+
+    {{:ok, spec: spec}, state}
   end
 
   @impl true
@@ -256,32 +263,5 @@ defmodule Membrane.WebRTC.EndpointBin do
     {_key, ice_ufrag} = Media.get_attribute(media, :ice_ufrag)
     {_key, ice_pwd} = Media.get_attribute(media, :ice_pwd)
     ice_ufrag <> " " <> ice_pwd
-  end
-
-  defp handle_audio_track(ssrc, encoding, pad, state) do
-    spec = %ParentSpec{
-      children: %{:rtp_vad => Membrane.RTPVAD},
-      links: [
-        link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding])
-        |> to(:rtp_vad)
-        |> via_out(:output)
-        |> to_bin_output(pad)
-      ]
-    }
-
-    {{:ok, spec: spec}, state}
-  end
-
-  defp handle_video_track(ssrc, encoding, pad, state) do
-    spec = %ParentSpec{
-      links: [
-        link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding])
-        |> to_bin_output(pad)
-      ]
-    }
-
-    {{:ok, spec: spec}, state}
   end
 end
