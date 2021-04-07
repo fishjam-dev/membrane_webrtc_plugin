@@ -7,15 +7,18 @@ defmodule Membrane.WebRTC.Track do
   @enforce_keys [:type, :stream_id, :id, :name, :timestamp]
   defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true]
 
-  @type encoding_t :: :OPUS | :H264
+  @type id :: String.t()
+  @type encoding :: :OPUS | :H264
 
   @type t :: %__MODULE__{
           type: :audio | :video,
           stream_id: String.t(),
-          id: String.t(),
+          id: id,
           name: String.t(),
           ssrc: RTP.ssrc_t(),
-          encoding: encoding_t
+          encoding: encoding,
+          timestamp: any(),
+          enabled?: boolean()
         }
 
   @doc """
@@ -28,7 +31,7 @@ defmodule Membrane.WebRTC.Track do
           id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t(),
-          encoding: encoding_t
+          encoding: encoding
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))

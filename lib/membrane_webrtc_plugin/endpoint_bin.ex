@@ -1,9 +1,15 @@
 defmodule Membrane.WebRTC.EndpointBin do
   @moduledoc """
-  Module responsible for interacting with WebRTC peer.
+  Module responsible for interacting with a WebRTC peer.
 
-  All streams received from a peer are conveyed on bin's output pads whereas all streams incoming on
-  bin's input pads are sent to the peer.
+  To send or receive tracks from a WebRTC peer, specify them with
+  `:inbound_tracks` and `:outbound_tracks` options, and link corresponding
+  `:input` and `:output` pads with ids matching the declared tracks' ids.
+  The tracks can be also dynamically added and removed by sending
+  `t:alter_tracks_message/0`.
+
+  To initiate or modify the connection, the bin sends and expects to receive
+  `t:signal_message/0`.
   """
   use Membrane.Bin
 
@@ -12,13 +18,18 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   require Membrane.Logger
 
+  @type signal_message ::
+          {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
+
+  @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.id()]}
+
   def_options inbound_tracks: [
-                type: :list,
+                spec: [Membrane.WebRTC.Track.t()],
                 default: [],
                 description: "List of initial inbound tracks"
               ],
               outbound_tracks: [
-                type: :list,
+                spec: [Membrane.WebRTC.Track.t()],
                 default: [],
                 description: "List of initial outbound tracks"
               ],
@@ -39,7 +50,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     demand_unit: :buffers,
     caps: :any,
     availability: :on_request,
-    options: [encoding: []]
+    options: [encoding: [spec: :OPUS | :H264, description: "Track encoding"]]
 
   def_output_pad :output, demand_unit: :buffers, caps: :any, availability: :on_request
 
