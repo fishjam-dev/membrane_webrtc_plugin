@@ -136,11 +136,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_pad_added(Pad.ref(:output, track_id) = pad, _ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
+    extensions = if encoding == :OPUS, do: [:vad], else: []
 
     spec = %ParentSpec{
       links: [
         link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding])
+        |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding, extensions: extensions])
         |> to_bin_output(pad)
       ]
     }
@@ -195,6 +196,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification({:new_candidate_full, cand}, _from, _ctx, %{offer_sent: true} = state) do
     state = Map.update!(state, :candidates, &[cand | &1])
     {{:ok, notify_candidates([cand])}, state}
+  end
+
+  @impl true
+  def handle_notification({:vad, _val} = msg, _from, _ctx, state) do
+    {{:ok, notify: msg}, state}
   end
 
   @impl true
