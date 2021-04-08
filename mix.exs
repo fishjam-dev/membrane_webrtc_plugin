@@ -48,7 +48,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
        github: "membraneframework/membrane_h264_ffmpeg_plugin", branch: "wait-for-keyframe"},
       # {:membrane_rtp_h264_plugin, "~> 0.4.0"},
       {:membrane_rtp_h264_plugin, "~> 0.4.1"},
-      {:membrane_dtls_plugin, "~> 0.3.0"},
+      {:membrane_dtls_plugin, github: "membraneframework/membrane_dtls_plugin"},
       # {:membrane_rtp_plugin, "~> 0.5.0"},
       {:membrane_rtp_plugin,
        github: "membraneframework/membrane_rtp_plugin", branch: "inband-rtcp"},
