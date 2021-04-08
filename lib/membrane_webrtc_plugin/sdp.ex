@@ -55,7 +55,10 @@ defmodule Membrane.WebRTC.SDP do
     bundle_group = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
-    |> ExSDP.add_attribute({:group, {:BUNDLE, bundle_group}})
+    |> ExSDP.add_attributes([
+      {:group, {:BUNDLE, bundle_group}},
+      "extmap:6 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
+    ])
     |> add_tracks(inbound_tracks, :recvonly, config)
     |> add_tracks(outbound_tracks, :sendonly, config)
   end
