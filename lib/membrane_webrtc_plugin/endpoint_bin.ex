@@ -44,6 +44,15 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: [ExLibnice.relay_info()],
                 default: [],
                 description: "List of turn servers"
+              ],
+              handshake_opts: [
+                type: :list,
+                spec: Keyword.t(),
+                default: [],
+                description: """
+                Keyword list with options for handshake module. For more information please
+                refer to `Membrane.ICE.Bin`
+                """
               ]
 
   def_input_pad :input,
@@ -62,7 +71,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         turn_servers: opts.turn_servers,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
-        handshake_opts: [client_mode: false, dtls_srtp: true]
+        handshake_opts: opts.handshake_opts
       },
       rtp: %Membrane.RTP.SessionBin{secure?: true},
       ice_funnel: Membrane.Funnel
