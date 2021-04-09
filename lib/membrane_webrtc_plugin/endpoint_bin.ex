@@ -50,7 +50,17 @@ defmodule Membrane.WebRTC.EndpointBin do
     demand_unit: :buffers,
     caps: :any,
     availability: :on_request,
-    options: [encoding: [spec: :OPUS | :H264, description: "Track encoding"]]
+    options: [
+      encoding: [
+        spec: :OPUS | :H264,
+        description: "Track encoding"
+      ],
+      track_enabled: [
+        spec: boolean(),
+        default: true,
+        description: "Enable or disable track"
+      ]
+    ]
 
   def_output_pad :output,
     demand_unit: :buffers,
@@ -123,29 +133,38 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     %{encoding: encoding} = ctx.options
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
+    %{track_enabled: track_enabled} = ctx.pads[pad].options
 
     spec =
       case encoding do
         :H264 ->
           %ParentSpec{
-            children: %{{:h264_parser, ssrc} => %Membrane.H264.FFmpeg.Parser{alignment: :nal}},
+            children: %{
+              {:h264_parser, ssrc} => %Membrane.H264.FFmpeg.Parser{alignment: :nal},
+              {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
+            },
             links: [
               link_bin_input(pad)
               |> to({:h264_parser, ssrc})
               |> via_in(Pad.ref(:input, ssrc))
               |> to(:rtp)
               |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
+              |> to({:track_filter, track_id})
               |> to(:ice_funnel)
             ]
           }
 
         :OPUS ->
           %ParentSpec{
+            children: %{
+              {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
+            },
             links: [
               link_bin_input(pad)
               |> via_in(Pad.ref(:input, ssrc))
               |> to(:rtp)
               |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
+              |> to({:track_filter, track_id})
               |> to(:ice_funnel)
             ]
           }
@@ -161,7 +180,9 @@ defmodule Membrane.WebRTC.EndpointBin do
     %{track_enabled: track_enabled} = ctx.pads[pad].options
 
     spec = %ParentSpec{
-      children: %{{:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}},
+      children: %{
+        {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
+      },
       links: [
         link(:rtp)
         |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding, extensions: extensions])

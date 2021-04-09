@@ -4,11 +4,15 @@ defmodule Membrane.WebRTC.Endpoint do
   """
   alias Membrane.WebRTC.Track
 
-  @type t :: %__MODULE__{tracks: %{audio_tracks: %{}, video_tracks: %{}}}
+  @type t :: %__MODULE__{
+          id: any(),
+          type: :participant | :screensharing,
+          tracks: %{audio_tracks: %{}, video_tracks: %{}}
+        }
 
-  defstruct tracks: %{audio_tracks: %{}, video_tracks: %{}}
+  defstruct id: nil, type: :participant, tracks: %{audio_tracks: %{}, video_tracks: %{}}
 
-  def new(tracks) do
+  def new(id, type, tracks) do
     {audio_tracks, video_tracks} =
       Enum.reduce(tracks, {%{}, %{}}, fn
         %Track{id: id, type: :audio} = track, {audio_tracks, video_tracks} ->
@@ -19,7 +23,7 @@ defmodule Membrane.WebRTC.Endpoint do
       end)
 
     tracks = %{audio_tracks: audio_tracks, video_tracks: video_tracks}
-    %__MODULE__{tracks: tracks}
+    %__MODULE__{id: id, type: type, tracks: tracks}
   end
 
   def get_audio_tracks(endpoint), do: Map.values(endpoint.tracks.audio_tracks)
