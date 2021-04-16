@@ -5,8 +5,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   To send or receive tracks from a WebRTC peer, specify them with
   `:inbound_tracks` and `:outbound_tracks` options, and link corresponding
   `:input` and `:output` pads with ids matching the declared tracks' ids.
-  The tracks can be also dynamically added and removed by sending
-  `t:alter_tracks_message/0`.
+
+  The tracks can be manipulated by sending `t:track_message/0`.
 
   To initiate or modify the connection, the bin sends and expects to receive
   `t:signal_message/0`.
@@ -21,7 +21,22 @@ defmodule Membrane.WebRTC.EndpointBin do
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
+  @type track_message :: alter_tracks_message() | enable_track_message() | disable_track_message()
+
+  @typedoc """
+  Message that adds or removes tracks.
+  """
   @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.id()]}
+
+  @typedoc """
+  Message that enables track.
+  """
+  @type enable_track_message :: {:disable_track, Track.id()}
+
+  @typedoc """
+  Message that disables track.
+  """
+  @type disable_track_message :: {:disable_track, Track.id()}
 
   def_options inbound_tracks: [
                 spec: [Membrane.WebRTC.Track.t()],
