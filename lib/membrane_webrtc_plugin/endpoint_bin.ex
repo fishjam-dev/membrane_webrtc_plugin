@@ -160,11 +160,11 @@ defmodule Membrane.WebRTC.EndpointBin do
             },
             links: [
               link_bin_input(pad)
+              |> to({:track_filter, track_id})
               |> to({:h264_parser, ssrc})
               |> via_in(Pad.ref(:input, ssrc))
               |> to(:rtp)
               |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
-              |> to({:track_filter, track_id})
               |> to(:ice_funnel)
             ]
           }
@@ -176,10 +176,10 @@ defmodule Membrane.WebRTC.EndpointBin do
             },
             links: [
               link_bin_input(pad)
+              |> to({:track_filter, track_id})
               |> via_in(Pad.ref(:input, ssrc))
               |> to(:rtp)
               |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
-              |> to({:track_filter, track_id})
               |> to(:ice_funnel)
             ]
           }
