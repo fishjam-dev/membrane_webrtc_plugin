@@ -5,8 +5,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   To send or receive tracks from a WebRTC peer, specify them with
   `:inbound_tracks` and `:outbound_tracks` options, and link corresponding
   `:input` and `:output` pads with ids matching the declared tracks' ids.
-  The tracks can be also dynamically added and removed by sending
-  `t:alter_tracks_message/0`.
+
+  The tracks can be manipulated by sending `t:track_message/0`.
 
   To initiate or modify the connection, the bin sends and expects to receive
   `t:signal_message/0`.
@@ -21,7 +21,22 @@ defmodule Membrane.WebRTC.EndpointBin do
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
+  @type track_message :: alter_tracks_message() | enable_track_message() | disable_track_message()
+
+  @typedoc """
+  Message that adds or removes tracks.
+  """
   @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.id()]}
+
+  @typedoc """
+  Message that enables track.
+  """
+  @type enable_track_message :: {:disable_track, Track.id()}
+
+  @typedoc """
+  Message that disables track.
+  """
+  @type disable_track_message :: {:disable_track, Track.id()}
 
   def_options inbound_tracks: [
                 spec: [Membrane.WebRTC.Track.t()],
@@ -59,9 +74,29 @@ defmodule Membrane.WebRTC.EndpointBin do
     demand_unit: :buffers,
     caps: :any,
     availability: :on_request,
-    options: [encoding: [spec: :OPUS | :H264, description: "Track encoding"]]
+    options: [
+      encoding: [
+        spec: :OPUS | :H264,
+        description: "Track encoding"
+      ],
+      track_enabled: [
+        spec: boolean(),
+        default: true,
+        description: "Enable or disable track"
+      ]
+    ]
 
-  def_output_pad :output, demand_unit: :buffers, caps: :any, availability: :on_request
+  def_output_pad :output,
+    demand_unit: :buffers,
+    caps: :any,
+    availability: :on_request,
+    options: [
+      track_enabled: [
+        spec: boolean(),
+        default: true,
+        description: "Enable or disable track"
+      ]
+    ]
 
   @impl true
   def handle_init(opts) do
@@ -122,14 +157,19 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     %{encoding: encoding} = ctx.options
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
+    %{track_enabled: track_enabled} = ctx.pads[pad].options
 
     spec =
       case encoding do
         :H264 ->
           %ParentSpec{
-            children: %{{:h264_parser, ssrc} => %Membrane.H264.FFmpeg.Parser{alignment: :nal}},
+            children: %{
+              {:h264_parser, ssrc} => %Membrane.H264.FFmpeg.Parser{alignment: :nal},
+              {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
+            },
             links: [
               link_bin_input(pad)
+              |> to({:track_filter, track_id})
               |> to({:h264_parser, ssrc})
               |> via_in(Pad.ref(:input, ssrc))
               |> to(:rtp)
@@ -140,8 +180,12 @@ defmodule Membrane.WebRTC.EndpointBin do
 
         :OPUS ->
           %ParentSpec{
+            children: %{
+              {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
+            },
             links: [
               link_bin_input(pad)
+              |> to({:track_filter, track_id})
               |> via_in(Pad.ref(:input, ssrc))
               |> to(:rtp)
               |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
@@ -154,14 +198,20 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_pad_added(Pad.ref(:output, track_id) = pad, _ctx, state) do
+  def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
     extensions = if encoding == :OPUS, do: [:vad], else: []
+    %{track_enabled: track_enabled} = ctx.pads[pad].options
 
     spec = %ParentSpec{
+      children: %{
+        {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
+      },
       links: [
         link(:rtp)
         |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding, extensions: extensions])
+        |> to({:track_filter, track_id})
+        |> via_out(:output)
         |> to_bin_output(pad)
       ]
     }
@@ -267,6 +317,16 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Map.update!(:outbound_tracks, &Map.drop(&1, tracks_ids))
 
     {{:ok, forward: {:ice, :restart_stream}}, state}
+  end
+
+  @impl true
+  def handle_other({:enable_track, track_id}, _ctx, state) do
+    {{:ok, forward: {{:track_filter, track_id}, :enable_track}}, state}
+  end
+
+  @impl true
+  def handle_other({:disable_track, track_id}, _ctx, state) do
+    {{:ok, forward: {{:track_filter, track_id}, :disable_track}}, state}
   end
 
   defp add_tracks(state, direction, tracks) do
