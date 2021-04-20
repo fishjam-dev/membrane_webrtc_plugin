@@ -68,6 +68,12 @@ defmodule Membrane.WebRTC.EndpointBin do
                 Keyword list with options for handshake module. For more information please
                 refer to `Membrane.ICE.Bin`
                 """
+              ],
+              log_metadata: [
+                spec: :list,
+                spec: Keyword.t(),
+                default: [],
+                description: "Logger metadata used for endpoint bin and all its descendants"
               ]
 
   def_input_pad :input,
@@ -144,7 +150,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
 
-    {{:ok, spec: spec}, state}
+    {{:ok, spec: spec, log_metadata: opts.log_metadata}, state}
   end
 
   defp hex_dump(digest_str) do
