@@ -83,7 +83,7 @@ defmodule Membrane.WebRTC.SDP do
       {:fingerprint, config.fingerprint},
       {:setup, :actpass},
       {:mid, track.id},
-      MSID.new(track.stream_id),
+      MSID.new(track.stream_id, track.msid),
       :rtcp_mux
     ])
     |> Media.add_attributes(codecs)

@@ -5,7 +5,7 @@ defmodule Membrane.WebRTC.Track do
   alias Membrane.RTP
 
   @enforce_keys [:type, :stream_id, :id, :name, :timestamp]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true]
+  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true, msid: nil]
 
   @type id :: String.t()
   @type encoding :: :OPUS | :H264
@@ -15,6 +15,7 @@ defmodule Membrane.WebRTC.Track do
           stream_id: String.t(),
           id: id,
           name: String.t(),
+          msid: String.t() | nil,
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
           timestamp: any(),

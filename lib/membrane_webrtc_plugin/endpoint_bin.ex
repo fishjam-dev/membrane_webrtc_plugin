@@ -13,7 +13,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   use Membrane.Bin
 
-  alias ExSDP.{Attribute.SSRC, Media}
+  alias ExSDP.{Attribute.SSRC, Attribute.MSID, Media}
   alias Membrane.WebRTC.{SDP, Track}
 
   require Membrane.Logger
@@ -299,10 +299,35 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
       |> Enum.into(%{})
 
+    mid_to_mssid_app_data =
+      sdp.media
+      |> Enum.filter(&(:sendonly in &1.attributes))
+      |> Enum.map(fn media ->
+        %MSID{app_data: app_data} = Media.get_attribute(media, MSID)
+        {:mid, mid} = Media.get_attribute(media, :mid)
+
+        {mid, app_data}
+      end)
+      |> Enum.into(%{})
+
+    inbound_tracks =
+      state.inbound_tracks
+      |> Enum.map(fn {id, track} ->
+        track = track |> Map.put(:msid, mid_to_mssid_app_data[track.id])
+        {id, track}
+      end)
+      |> Enum.into(%{})
+
     remote_credentials = get_remote_credentials(sdp)
 
-    {{:ok, forward: {:ice, {:set_remote_credentials, remote_credentials}}},
-     Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
+    state =
+      state
+      |> Map.merge(%{
+        inbound_tracks: inbound_tracks,
+        ssrc_to_mid: ssrc_to_mid
+      })
+
+    {{:ok, forward: {:ice, {:set_remote_credentials, remote_credentials}}}, state}
   end
 
   @impl true
@@ -348,7 +373,17 @@ defmodule Membrane.WebRTC.EndpointBin do
           tracks
       end
 
-    tracks = Map.new(tracks, &{&1.id, &1})
+    tracks =
+      tracks
+      |> Enum.map(fn
+        %Track{msid: nil} = track ->
+          %Track{track | msid: UUID.uuid4()}
+
+        track ->
+          track
+      end)
+      |> Map.new(&{&1.id, &1})
+
     Map.update!(state, direction, &Map.merge(&1, tracks))
   end
 
