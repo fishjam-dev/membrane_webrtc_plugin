@@ -165,42 +165,23 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
     %{track_enabled: track_enabled} = ctx.pads[pad].options
 
-    spec =
+    encoding_specific_links =
       case encoding do
-        :H264 ->
-          %ParentSpec{
-            children: %{
-              {:h264_parser, ssrc} => %Membrane.H264.FFmpeg.Parser{alignment: :nal},
-              {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
-            },
-            links: [
-              link_bin_input(pad)
-              |> to({:track_filter, track_id})
-              |> to({:h264_parser, ssrc})
-              |> via_in(Pad.ref(:input, ssrc))
-              |> to(:rtp)
-              |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
-              |> to(:ice_funnel)
-            ]
-          }
-
-        :OPUS ->
-          %ParentSpec{
-            children: %{
-              {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
-            },
-            links: [
-              link_bin_input(pad)
-              |> to({:track_filter, track_id})
-              |> via_in(Pad.ref(:input, ssrc))
-              |> to(:rtp)
-              |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
-              |> to(:ice_funnel)
-            ]
-          }
+        :H264 -> &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
+        :OPUS -> & &1
       end
 
-    {{:ok, spec: spec}, state}
+    links = [
+      link_bin_input(pad)
+      |> pipe_fun(encoding_specific_links)
+      |> to({:track_filter, track_id}, %Membrane.WebRTC.TrackFilter{enabled: track_enabled})
+      |> via_in(Pad.ref(:input, ssrc))
+      |> to(:rtp)
+      |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
+      |> to(:ice_funnel)
+    ]
+
+    {{:ok, spec: %ParentSpec{links: links}}, state}
   end
 
   @impl true
@@ -364,4 +345,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     {_key, ice_pwd} = Media.get_attribute(media, :ice_pwd)
     ice_ufrag <> " " <> ice_pwd
   end
+
+  # TODO: remove once updated to Elixir 1.12
+  defp pipe_fun(term, fun), do: fun.(term)
 end
