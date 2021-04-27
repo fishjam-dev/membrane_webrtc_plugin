@@ -35,8 +35,26 @@ defmodule Membrane.WebRTC.Endpoint do
   @spec get_tracks(endpoint :: Endpoint.t()) :: [Track.t()]
   def get_tracks(endpoint), do: Map.values(endpoint.inbound_tracks)
 
-  @spec update_track_encoding(endpoint :: Endpoint.t(), track_id :: Track.id(), encoding :: atom) ::
+  @spec update_track_encoding(endpoint :: Endpoint.t(), track_mid :: Track.id(), encoding :: atom) ::
           Endpoint.t()
-  def update_track_encoding(endpoint, track_id, value),
-    do: update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
+  def update_track_encoding(endpoint, track_id, value) do
+    update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
+  end
+
+  @spec update_tracks_ids(Membrane.WebRTC.Endpoint.t(), map) :: Membrane.WebRTC.Endpoint.t()
+  def update_tracks_ids(endpoint, mid_to_id) do
+    inbound_tracks =
+      endpoint.inbound_tracks
+      |> Map.values()
+      |> Enum.map(fn %Track{mid: track_mid} = track ->
+        with %{^track_mid => track_id} <- mid_to_id do
+          %Track{track | id: track_id}
+        else
+          _ -> track
+        end
+      end)
+      |> Map.new(&{&1.id, &1})
+
+    %__MODULE__{endpoint | inbound_tracks: inbound_tracks}
+  end
 end

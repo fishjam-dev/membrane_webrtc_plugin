@@ -52,7 +52,7 @@ defmodule Membrane.WebRTC.SDP do
     # TODO verify if sorting tracks this way allows for adding inbound tracks in updated offer
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
-    bundle_group = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
+    bundle_group = Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid)
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
     |> ExSDP.add_attributes([
@@ -82,8 +82,8 @@ defmodule Membrane.WebRTC.SDP do
       {:ice_options, "trickle"},
       {:fingerprint, config.fingerprint},
       {:setup, :actpass},
-      {:mid, track.id},
-      MSID.new(track.stream_id, track.msid),
+      {:mid, track.mid},
+      if(track.id != nil, do: MSID.new(track.stream_id, track.id), else: MSID.new(track.stream_id)),
       :rtcp_mux
     ])
     |> Media.add_attributes(codecs)

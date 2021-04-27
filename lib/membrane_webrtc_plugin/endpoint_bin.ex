@@ -74,6 +74,9 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
+              ],
+              peer_type: [
+                spec: atom()
               ]
 
   def_input_pad :input,
@@ -145,7 +148,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         outbound_tracks: %{},
         candidates: [],
         offer_sent: false,
-        dtls_fingerprint: nil
+        dtls_fingerprint: nil,
+        first_sdp_answer_arrived?: false
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -229,7 +233,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification({:new_rtp_stream, ssrc, pt}, _from, _ctx, state) do
     %{encoding_name: encoding} = Membrane.RTP.PayloadFormat.get_payload_type_mapping(pt)
     mid = Map.fetch!(state.ssrc_to_mid, ssrc)
-    track = Map.fetch!(state.inbound_tracks, mid)
+
+    track =
+      state.inbound_tracks
+      |> Map.values()
+      |> Enum.find(&(&1.mid == mid))
+
     track = %Track{track | ssrc: ssrc, encoding: encoding}
     state = put_in(state, [:inbound_tracks, track.id], track)
     {{:ok, notify: {:new_track, track.id, encoding}}, state}
@@ -299,7 +308,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
       |> Enum.into(%{})
 
-    mid_to_mssid_app_data =
+    mid_to_msid_app_data =
       sdp.media
       |> Enum.filter(&(:sendonly in &1.attributes))
       |> Enum.map(fn media ->
@@ -312,22 +321,32 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     inbound_tracks =
       state.inbound_tracks
-      |> Enum.map(fn {id, track} ->
-        track = track |> Map.put(:msid, mid_to_mssid_app_data[track.id])
-        {id, track}
+      |> Map.new(fn {_id, track} ->
+        track = track |> Map.put(:id, mid_to_msid_app_data[track.mid])
+        {track.id, track}
       end)
-      |> Enum.into(%{})
 
     remote_credentials = get_remote_credentials(sdp)
+
+    optional_notify_msg =
+      if not state.first_sdp_answer_arrived? do
+        [notify: {:new_tracks_ids, mid_to_msid_app_data}]
+      else
+        []
+      end
 
     state =
       state
       |> Map.merge(%{
         inbound_tracks: inbound_tracks,
-        ssrc_to_mid: ssrc_to_mid
+        mid_to_msid_app_data: mid_to_msid_app_data,
+        ssrc_to_mid: ssrc_to_mid,
+        first_sdp_answer_arrived?: true
       })
 
-    {{:ok, forward: {:ice, {:set_remote_credentials, remote_credentials}}}, state}
+    {{:ok,
+      [forward: {:ice, {:set_remote_credentials, remote_credentials}}] ++ optional_notify_msg},
+     state}
   end
 
   @impl true
@@ -375,13 +394,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     tracks =
       tracks
-      |> Enum.map(fn
-        %Track{msid: nil} = track ->
-          %Track{track | msid: UUID.uuid4()}
-
-        track ->
-          track
-      end)
       |> Map.new(&{&1.id, &1})
 
     Map.update!(state, direction, &Map.merge(&1, tracks))
