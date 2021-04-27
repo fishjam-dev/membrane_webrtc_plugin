@@ -10,10 +10,11 @@ defmodule Membrane.WebRTC.Endpoint do
   @type t :: %__MODULE__{
           id: id(),
           type: :participant | :screensharing,
-          inbound_tracks: %{Track.id() => Track.t()}
+          inbound_tracks: %{Track.id() => Track.t()},
+          ctx: any()
         }
 
-  defstruct id: nil, type: :participant, inbound_tracks: %{}
+  defstruct id: nil, type: :participant, inbound_tracks: %{}, ctx: nil
 
   @spec new(id :: id(), type :: type(), inbound_tracks :: [Track.t()]) :: Endpoint.t()
   def new(id, type, inbound_tracks) do
@@ -34,6 +35,14 @@ defmodule Membrane.WebRTC.Endpoint do
 
   @spec get_tracks(endpoint :: Endpoint.t()) :: [Track.t()]
   def get_tracks(endpoint), do: Map.values(endpoint.inbound_tracks)
+
+  @spec get_context(endpoint :: Endpoint.t()) :: any()
+  def get_context(endpoint), do: endpoint.ctx
+
+  @spec put_context(endpoint :: Endpoint.t(), ctx :: any()) :: Endpoint.t()
+  def put_context(endpoint, ctx) do
+    %__MODULE__{endpoint | ctx: ctx}
+  end
 
   @spec update_track_encoding(endpoint :: Endpoint.t(), track_id :: Track.id(), encoding :: atom) ::
           Endpoint.t()
