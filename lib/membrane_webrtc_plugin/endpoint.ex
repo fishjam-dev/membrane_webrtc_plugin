@@ -37,7 +37,6 @@ defmodule Membrane.WebRTC.Endpoint do
   @spec get_tracks(endpoint :: t()) :: [Track.t()]
   def get_tracks(endpoint), do: Map.values(endpoint.inbound_tracks)
 
-
   @spec get_context(endpoint :: t()) :: any()
   def get_context(endpoint), do: endpoint.ctx
 
