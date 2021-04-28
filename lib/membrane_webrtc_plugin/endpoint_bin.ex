@@ -329,10 +329,10 @@ defmodule Membrane.WebRTC.EndpointBin do
     remote_credentials = get_remote_credentials(sdp)
 
     optional_notify_msg =
-      if not state.first_sdp_answer_arrived? do
-        [notify: {:new_tracks_ids, mid_to_msid_app_data}]
-      else
+      if state.first_sdp_answer_arrived? do
         []
+      else
+        [notify: {:new_tracks_ids, mid_to_msid_app_data}]
       end
 
     state =

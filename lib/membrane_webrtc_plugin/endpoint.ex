@@ -58,7 +58,7 @@ defmodule Membrane.WebRTC.Endpoint do
         with %{^track_mid => track_id} <- mid_to_id do
           %Track{track | id: track_id}
         else
-          _ -> track
+          _mid_to_id -> track
         end
       end)
       |> Map.new(&{&1.id, &1})
