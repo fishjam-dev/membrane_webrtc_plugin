@@ -55,10 +55,10 @@ defmodule Membrane.WebRTC.Endpoint do
       endpoint.inbound_tracks
       |> Map.values()
       |> Enum.map(fn %Track{mid: track_mid} = track ->
-        with %{^track_mid => track_id} <- mid_to_id do
-          %Track{track | id: track_id}
+        with %{^track_mid => new_track_id} <- mid_to_id do
+          {new_track_id, %Track{track | id: new_track_id}}
         else
-          _mid_to_id -> track
+          _mid_to_id -> {track.id, track}
         end
       end)
       |> Map.new(&{&1.id, &1})

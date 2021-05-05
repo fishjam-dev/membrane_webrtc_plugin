@@ -74,9 +74,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
-              ],
-              peer_type: [
-                spec: atom()
               ]
 
   def_input_pad :input,
@@ -294,30 +291,29 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_other({:signal, {:sdp_answer, sdp}}, _ctx, state) do
+  def handle_other({:signal, {:sdp_answer, sdp}}, _ctx, %{first_sdp_answer_arrived?: false} = state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
+    remote_credentials = get_remote_credentials(sdp)
 
     ssrc_to_mid =
       sdp.media
       |> Enum.filter(&(:sendonly in &1.attributes))
-      |> Enum.map(fn media ->
+      |> Map.new(fn media ->
         {:mid, mid} = Media.get_attribute(media, :mid)
         %SSRC{id: ssrc} = Media.get_attribute(media, SSRC)
 
         {ssrc, mid}
       end)
-      |> Enum.into(%{})
 
     mid_to_msid_app_data =
       sdp.media
       |> Enum.filter(&(:sendonly in &1.attributes))
-      |> Enum.map(fn media ->
+      |> Map.new(fn media ->
         %MSID{app_data: app_data} = Media.get_attribute(media, MSID)
         {:mid, mid} = Media.get_attribute(media, :mid)
 
         {mid, app_data}
       end)
-      |> Enum.into(%{})
 
     inbound_tracks =
       state.inbound_tracks
@@ -326,14 +322,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         {track.id, track}
       end)
 
-    remote_credentials = get_remote_credentials(sdp)
-
-    optional_notify_msg =
-      if state.first_sdp_answer_arrived? do
-        []
-      else
-        [notify: {:new_tracks_ids, mid_to_msid_app_data}]
-      end
+    actions =
+      [
+        forward: {:ice, {:set_remote_credentials, remote_credentials}},
+        notify: {:new_tracks_ids, mid_to_msid_app_data}
+      ]
 
     state =
       state
@@ -344,9 +337,15 @@ defmodule Membrane.WebRTC.EndpointBin do
         first_sdp_answer_arrived?: true
       })
 
-    {{:ok,
-      [forward: {:ice, {:set_remote_credentials, remote_credentials}}] ++ optional_notify_msg},
-     state}
+    {{:ok, actions}, state}
+  end
+
+  @impl true
+  def handle_other({:signal, {:sdp_answer, sdp}}, _ctx, state) do
+    {:ok, sdp} = sdp |> ExSDP.parse()
+    remote_credentials = get_remote_credentials(sdp)
+
+    {{:ok, [forward: {:ice, {:set_remote_credentials, remote_credentials}}]}, state}
   end
 
   @impl true
