@@ -156,7 +156,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         outbound_tracks: %{},
         candidates: [],
         offer_sent: false,
-        dtls_fingerprint: nil
+        dtls_fingerprint: nil,
+        rtp_extensions: opts[:rtp_extensions]
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
