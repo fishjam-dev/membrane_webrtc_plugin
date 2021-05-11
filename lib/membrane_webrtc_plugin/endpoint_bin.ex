@@ -79,12 +79,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
-              ],
-              rtp_extensions: [
-                spec: [{Membrane.RTP.SessionBin.extension_t(), allow_extension?}],
-                default: [],
-                description:
-                  "List of tuples representing rtp extension with their activation functions."
               ]
 
   def_input_pad :input,
@@ -112,6 +106,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         spec: boolean(),
         default: true,
         description: "Enable or disable track"
+      ],
+      extensions: [
+        spec: [{Membrane.RTP.SessionBin.extension_t(), allow_extension?}],
+        default: [],
+        description: "List of tuples representing rtp extension with their activation functions."
       ]
     ]
 
@@ -156,8 +155,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         outbound_tracks: %{},
         candidates: [],
         offer_sent: false,
-        dtls_fingerprint: nil,
-        rtp_extensions: opts.rtp_extensions
+        dtls_fingerprint: nil
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -220,7 +218,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, encoding: encoding} = track = Map.fetch!(state.inbound_tracks, track_id)
 
     extensions =
-      state.rtp_extensions
+      ctx.pads[pad].options.extensions
       |> Enum.flat_map(fn {extension, allow_extension} ->
         if allow_extension.(extension, track), do: [extension], else: []
       end)
