@@ -52,7 +52,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       # {:membrane_rtp_plugin, "~> 0.5.0"},
       {:membrane_rtp_plugin,
        github: "membraneframework/membrane_rtp_plugin",
-       branch: "add-session-bin-extension-configs"},
+       branch: "inband-rtcp"},
       {:ex_libsrtp, "~> 0.1.0"},
       {:membrane_rtp_opus_plugin, "~> 0.2.0"},
       {:membrane_opus_plugin, "~> 0.2.0"},
