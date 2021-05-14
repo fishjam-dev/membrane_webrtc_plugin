@@ -38,11 +38,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   @type disable_track_message :: {:disable_track, Track.id()}
 
-  @typedoc """
-  Callback telling if given RTP extension should be applied to given track.
-  """
-  @type allow_extension? :: (Membrane.RTP.SessionBin.extension_t(), Track.t() -> boolean())
-
   def_options inbound_tracks: [
                 spec: [Membrane.WebRTC.Track.t()],
                 default: [],
@@ -108,9 +103,9 @@ defmodule Membrane.WebRTC.EndpointBin do
         description: "Enable or disable track"
       ],
       extensions: [
-        spec: [{Membrane.RTP.SessionBin.extension_t(), allow_extension?}],
+        spec: [Membrane.RTP.SessionBin.extension_t()],
         default: [],
-        description: "List of tuples representing rtp extension with their activation functions."
+        description: "List of tuples representing rtp extensions"
       ]
     ]
 
@@ -215,15 +210,9 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
-    %Track{ssrc: ssrc, encoding: encoding} = track = Map.fetch!(state.inbound_tracks, track_id)
+    %Track{ssrc: ssrc, encoding: encoding} =  Map.fetch!(state.inbound_tracks, track_id)
 
-    extensions =
-      ctx.pads[pad].options.extensions
-      |> Enum.flat_map(fn {extension, allow_extension} ->
-        if allow_extension.(extension, track), do: [extension], else: []
-      end)
-
-    %{track_enabled: track_enabled} = ctx.pads[pad].options
+    %{track_enabled: track_enabled, extensions: extensions} = ctx.pads[pad].options
 
     spec = %ParentSpec{
       children: %{
