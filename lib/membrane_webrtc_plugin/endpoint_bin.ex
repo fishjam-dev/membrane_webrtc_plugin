@@ -210,7 +210,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
-    %Track{ssrc: ssrc, encoding: encoding} =  Map.fetch!(state.inbound_tracks, track_id)
+    %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
 
     %{track_enabled: track_enabled, extensions: extensions} = ctx.pads[pad].options
 
