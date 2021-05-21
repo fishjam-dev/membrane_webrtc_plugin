@@ -292,8 +292,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
       |> Enum.into(%{})
 
-    actions = set_remote_credentials(sdp)
-    {{:ok, actions}, Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
+    if ssrc_to_mid == %{} do
+      {:ok, state}
+    else
+      actions = set_remote_credentials(sdp)
+      {{:ok, actions}, Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
+    end
   end
 
   @impl true
