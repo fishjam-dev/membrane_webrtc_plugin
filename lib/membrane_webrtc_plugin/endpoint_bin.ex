@@ -12,6 +12,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   `t:signal_message/0`.
   """
   use Membrane.Bin
+  use Bunch
 
   alias ExSDP.{Attribute.SSRC, Media}
   alias Membrane.WebRTC.{SDP, Track}
@@ -149,7 +150,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         inbound_tracks: %{},
         outbound_tracks: %{},
         candidates: [],
-        offer_sent: false,
+        candidate_gathering_state: nil,
         dtls_fingerprint: nil
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -260,23 +261,29 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     Membrane.Logger.debug(offer)
 
-    actions =
-      [notify: {:signal, {:sdp_offer, to_string(offer)}}] ++
-        notify_candidates(state.candidates)
+    {actions, state} =
+      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
+            candidate_gathering_check: nil <- state.candidate_gathering_state do
+        {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
+      else
+        tracks_check: _ -> {[], state}
+        candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
+      end
 
-    {{:ok, actions}, %{state | offer_sent: true}}
+    actions = [notify: {:signal, {:sdp_offer, to_string(offer)}}] ++ actions
+
+    {{:ok, actions}, state}
   end
 
   @impl true
-  def handle_notification({:new_candidate_full, cand}, _from, _ctx, %{offer_sent: false} = state) do
-    state = Map.update!(state, :candidates, &[cand | &1])
-    {:ok, state}
-  end
-
-  @impl true
-  def handle_notification({:new_candidate_full, cand}, _from, _ctx, %{offer_sent: true} = state) do
+  def handle_notification({:new_candidate_full, cand}, _from, _ctx, state) do
     state = Map.update!(state, :candidates, &[cand | &1])
     {{:ok, notify_candidates([cand])}, state}
+  end
+
+  @impl true
+  def handle_notification(:candidate_gathering_done, _from, _ctx, state) do
+    {:ok, %{state | candidate_gathering_state: :done}}
   end
 
   @impl true
@@ -304,10 +311,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
       |> Enum.into(%{})
 
-    remote_credentials = get_remote_credentials(sdp)
-
-    {{:ok, forward: {:ice, {:set_remote_credentials, remote_credentials}}},
-     Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
+    actions = set_remote_credentials(sdp)
+    {{:ok, actions}, Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
   end
 
   @impl true
@@ -317,16 +322,13 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:add_tracks, tracks}, _ctx, state) do
-    state = %{state | offer_sent: false} |> add_tracks(:outbound_tracks, tracks)
+    state = add_tracks(state, :outbound_tracks, tracks)
     {{:ok, forward: {:ice, :restart_stream}}, state}
   end
 
   @impl true
   def handle_other({:remove_tracks, tracks_ids}, _ctx, state) do
-    state =
-      %{state | offer_sent: false}
-      |> Map.update!(:outbound_tracks, &Map.drop(&1, tracks_ids))
-
+    state = Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
     {{:ok, forward: {:ice, :restart_stream}}, state}
   end
 
@@ -363,10 +365,16 @@ defmodule Membrane.WebRTC.EndpointBin do
     end)
   end
 
-  defp get_remote_credentials(sdp) do
-    media = List.first(sdp.media)
-    {_key, ice_ufrag} = Media.get_attribute(media, :ice_ufrag)
-    {_key, ice_pwd} = Media.get_attribute(media, :ice_pwd)
-    ice_ufrag <> " " <> ice_pwd
+  defp set_remote_credentials(sdp) do
+    case List.first(sdp.media) do
+      nil ->
+        []
+
+      media ->
+        {_key, ice_ufrag} = Media.get_attribute(media, :ice_ufrag)
+        {_key, ice_pwd} = Media.get_attribute(media, :ice_pwd)
+        remote_credentials = ice_ufrag <> " " <> ice_pwd
+        [forward: {:ice, {:set_remote_credentials, remote_credentials}}]
+    end
   end
 end

@@ -3,7 +3,7 @@ defmodule Membrane.WebRTC.SDP do
   Module containing helper functions for creating SPD offer.
   """
 
-  alias ExSDP.Attribute.{RTPMapping, MSID, FMTP, SSRC}
+  alias ExSDP.Attribute.{RTPMapping, MSID, FMTP, SSRC, Group}
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.RTP.PayloadFormat
   alias Membrane.WebRTC.Track
@@ -52,13 +52,15 @@ defmodule Membrane.WebRTC.SDP do
     # TODO verify if sorting tracks this way allows for adding inbound tracks in updated offer
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
-    bundle_group = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
+    mids = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
+
+    attributes = [
+      %Group{semantics: "BUNDLE", mids: mids},
+      "extmap:6 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
+    ]
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
-    |> ExSDP.add_attributes([
-      {:group, {:BUNDLE, bundle_group}},
-      "extmap:6 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
-    ])
+    |> ExSDP.add_attributes(attributes)
     |> add_tracks(inbound_tracks, :recvonly, config)
     |> add_tracks(outbound_tracks, :sendonly, config)
   end
