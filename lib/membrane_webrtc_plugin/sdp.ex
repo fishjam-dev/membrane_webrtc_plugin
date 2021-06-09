@@ -44,8 +44,8 @@ defmodule Membrane.WebRTC.SDP do
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
       fingerprint: Keyword.fetch!(opts, :fingerprint),
       codecs: %{
-        audio: Keyword.get(opts, :audio_codecs, []) ++ get_opus(fmt_mappings),
-        video: Keyword.get(opts, :video_codecs, []) ++ get_h264(fmt_mappings)
+        audio: Keyword.get(opts, :audio_codecs, []) ++ get_default_audio_codecs(fmt_mappings),
+        video: Keyword.get(opts, :video_codecs, []) ++ get_default_video_codecs(fmt_mappings)
       }
     }
 
@@ -113,6 +113,11 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
+  defp get_default_audio_codecs(fmt_mappings), do: get_opus(fmt_mappings)
+
+  defp get_default_video_codecs(fmt_mappings),
+    do: get_vp8(fmt_mappings) ++ get_h264(fmt_mappings)
+
   defp get_opus(fmt_mappings) do
     %PayloadFormat{payload_type: pt} = PayloadFormat.get(:OPUS)
     %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
@@ -120,6 +125,14 @@ defmodule Membrane.WebRTC.SDP do
     rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", params: 2, payload_type: pt}
     fmtp = %FMTP{pt: pt, useinbandfec: true}
     [rtp_mapping, fmtp]
+  end
+
+  defp get_vp8(fmt_mappings) do
+    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:VP8)
+    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
+    pt = Map.get(fmt_mappings, :VP8, pt)
+    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", payload_type: pt}
+    [rtp_mapping]
   end
 
   defp get_h264(fmt_mappings) do
