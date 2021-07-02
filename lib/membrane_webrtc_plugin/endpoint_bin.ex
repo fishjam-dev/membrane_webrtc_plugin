@@ -61,6 +61,11 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "List of turn servers"
               ],
+              port_range: [
+                spec: Range.t(),
+                default: 0..0,
+                description: "Port range to be used by `Membrane.ICE.Bin`"
+              ],
               handshake_opts: [
                 type: :list,
                 spec: Keyword.t(),
@@ -116,6 +121,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       ice: %Membrane.ICE.Bin{
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
+        port_range: opts.port_range,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
