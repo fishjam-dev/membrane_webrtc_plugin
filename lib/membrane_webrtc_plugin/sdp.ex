@@ -26,26 +26,30 @@ defmodule Membrane.WebRTC.SDP do
         %RTPMapping{payload_type: 98, encoding: "VP9", clock_rate: 90_000}
       ]
 
-  Both lists are empty by default, while Opus and H264 attributes
-  are appended to audio and video, respectively.
+  By default both lists are empty and default audio and video codecs get appended including
+  OPUS for audio, H264 and VP8 for video.
+  To disable the default codecs set `use_default_codecs` to false.
   """
   @spec create_offer(
           ice_ufrag: String.t(),
           ice_pwd: String.t(),
           fingerprint: fingerprint(),
           audio_codecs: [ExSDP.Attribute.t()],
-          video_codecs: [ExSDP.Attribute.t()]
+          video_codecs: [ExSDP.Attribute.t()],
+          use_default_codecs: boolean()
         ) :: ExSDP.t()
   def create_offer(opts) do
     fmt_mappings = Keyword.get(opts, :fmt_mappings, %{})
+
+    use_default_codecs = Keyword.get(opts, :use_default_codecs, true)
 
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
       fingerprint: Keyword.fetch!(opts, :fingerprint),
       codecs: %{
-        audio: Keyword.get(opts, :audio_codecs, []) ++ get_default_audio_codecs(fmt_mappings),
-        video: Keyword.get(opts, :video_codecs, []) ++ get_default_video_codecs(fmt_mappings)
+        audio: Keyword.get(opts, :audio_codecs, []) ++ (if use_default_codecs, do: get_default_audio_codecs(fmt_mappings), else: []),
+        video: Keyword.get(opts, :video_codecs, []) ++ (if use_default_codecs, do: get_default_video_codecs(fmt_mappings), else: [])
       }
     }
 

@@ -70,6 +70,23 @@ defmodule Membrane.WebRTC.EndpointBin do
                 refer to `Membrane.ICE.Bin`
                 """
               ],
+              video_codecs: [
+                type: :list,
+                spec: [ExSDP.Attribute.t()],
+                default: [],
+                description: "Video codecs that will be passed for SDP offer generation"
+              ],
+              audio_codecs: [
+                type: :list,
+                spec: [ExSDP.Attribute.t()],
+                default: [],
+                description: "Audio codecs that will be passed for SDP offer generation"
+              ],
+              use_default_codecs: [
+                type: :boolean,
+                default: true,
+                description: "Option whether default codecs should be included for SDP offer generation"
+              ],
               log_metadata: [
                 spec: :list,
                 spec: Keyword.t(),
@@ -116,6 +133,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       ice: %Membrane.ICE.Bin{
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
+        audio_codecs: opts.audio_codecs,
+        video_codecs: opts.video_codecs,
+        use_default_codecs: opts.use_default_codecs,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
@@ -235,6 +255,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       SDP.create_offer(
         inbound_tracks: Map.values(state.inbound_tracks),
         outbound_tracks: Map.values(state.outbound_tracks),
+        video_codecs: state.video_codecs,
+        audio_codecs: state.audio_codecs,
+        use_default_codecs: state.use_default_codecs,
         ice_ufrag: ice_ufrag,
         ice_pwd: ice_pwd,
         fingerprint: state.dtls_fingerprint
