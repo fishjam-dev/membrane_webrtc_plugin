@@ -83,10 +83,9 @@ defmodule Membrane.WebRTC.EndpointBin do
                 description: "Audio codecs that will be passed for SDP offer generation"
               ],
               use_default_codecs: [
-                type: :boolean,
-                default: true,
-                description:
-                  "Option whether default codecs should be included for SDP offer generation"
+                spec: [:audio | :video],
+                default: [:audio, :video],
+                description: "Codec types which should use default codecs"
               ],
               log_metadata: [
                 spec: :list,

@@ -36,7 +36,7 @@ defmodule Membrane.WebRTC.SDP do
           fingerprint: fingerprint(),
           audio_codecs: [ExSDP.Attribute.t()],
           video_codecs: [ExSDP.Attribute.t()],
-          use_default_codecs: boolean()
+          use_default_codecs: [:audio | :video]
         ) :: ExSDP.t()
   def create_offer(opts) do
     fmt_mappings = Keyword.get(opts, :fmt_mappings, %{})
@@ -50,10 +50,10 @@ defmodule Membrane.WebRTC.SDP do
       codecs: %{
         audio:
           Keyword.get(opts, :audio_codecs, []) ++
-            if(use_default_codecs, do: get_default_audio_codecs(fmt_mappings), else: []),
+            if(:audio in use_default_codecs, do: get_default_audio_codecs(fmt_mappings), else: []),
         video:
           Keyword.get(opts, :video_codecs, []) ++
-            if(use_default_codecs, do: get_default_video_codecs(fmt_mappings), else: [])
+            if(:video in use_default_codecs, do: get_default_video_codecs(fmt_mappings), else: [])
       }
     }
 
