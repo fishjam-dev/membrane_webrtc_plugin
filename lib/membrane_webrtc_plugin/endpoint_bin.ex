@@ -85,7 +85,8 @@ defmodule Membrane.WebRTC.EndpointBin do
               use_default_codecs: [
                 spec: [:audio | :video],
                 default: [:audio, :video],
-                description: "Defines whether to use default codecs or not. Default codecs are those required by WebRTC standard - OPUS, VP8 and H264"
+                description:
+                  "Defines whether to use default codecs or not. Default codecs are those required by WebRTC standard - OPUS, VP8 and H264"
               ],
               log_metadata: [
                 spec: :list,
