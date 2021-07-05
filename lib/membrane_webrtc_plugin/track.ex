@@ -8,7 +8,7 @@ defmodule Membrane.WebRTC.Track do
   defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true]
 
   @type id :: String.t()
-  @type encoding :: :OPUS | :H264
+  @type encoding :: :OPUS | :H264 | :VP8
 
   @type t :: %__MODULE__{
           type: :audio | :video,
