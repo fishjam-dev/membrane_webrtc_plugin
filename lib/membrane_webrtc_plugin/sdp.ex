@@ -48,8 +48,12 @@ defmodule Membrane.WebRTC.SDP do
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
       fingerprint: Keyword.fetch!(opts, :fingerprint),
       codecs: %{
-        audio: Keyword.get(opts, :audio_codecs, []) ++ (if use_default_codecs, do: get_default_audio_codecs(fmt_mappings), else: []),
-        video: Keyword.get(opts, :video_codecs, []) ++ (if use_default_codecs, do: get_default_video_codecs(fmt_mappings), else: [])
+        audio:
+          Keyword.get(opts, :audio_codecs, []) ++
+            if(use_default_codecs, do: get_default_audio_codecs(fmt_mappings), else: []),
+        video:
+          Keyword.get(opts, :video_codecs, []) ++
+            if(use_default_codecs, do: get_default_video_codecs(fmt_mappings), else: [])
       }
     }
 

@@ -85,7 +85,8 @@ defmodule Membrane.WebRTC.EndpointBin do
               use_default_codecs: [
                 type: :boolean,
                 default: true,
-                description: "Option whether default codecs should be included for SDP offer generation"
+                description:
+                  "Option whether default codecs should be included for SDP offer generation"
               ],
               log_metadata: [
                 spec: :list,
@@ -133,9 +134,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       ice: %Membrane.ICE.Bin{
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
-        audio_codecs: opts.audio_codecs,
-        video_codecs: opts.video_codecs,
-        use_default_codecs: opts.use_default_codecs,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
@@ -169,6 +167,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       %{
         inbound_tracks: %{},
         outbound_tracks: %{},
+        audio_codecs: opts.audio_codecs,
+        video_codecs: opts.video_codecs,
+        use_default_codecs: opts.use_default_codecs,
         candidates: [],
         candidate_gathering_state: nil,
         dtls_fingerprint: nil
