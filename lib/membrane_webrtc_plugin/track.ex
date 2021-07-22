@@ -21,6 +21,8 @@ defmodule Membrane.WebRTC.Track do
           enabled?: boolean()
         }
 
+  require Membrane.Logger
+
   @doc """
   Creates a new track.
 
@@ -36,6 +38,7 @@ defmodule Membrane.WebRTC.Track do
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
     name = Keyword.get(opts, :name, "#{id}-#{type}-#{stream_id}")
+
 
     %__MODULE__{
       type: type,
