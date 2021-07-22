@@ -194,6 +194,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
+    Membrane.Logger.info("pad_added input")
     %{encoding: encoding} = ctx.options
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
     %{track_enabled: track_enabled} = ctx.pads[pad].options
@@ -258,10 +259,13 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
+    state = Map.put(state,:ice, %{ufrag: ice_ufrag, pwd: ice_pwd})
+
+
     offer =
       SDP.create_offer(
-        inbound_tracks: Map.values(state.inbound_tracks),
-        outbound_tracks: Map.values(state.outbound_tracks),
+        inbound_tracks: Map.values(state.outbound_tracks),
+        outbound_tracks: Map.values(%{}),
         video_codecs: state.video_codecs,
         audio_codecs: state.audio_codecs,
         use_default_codecs: state.use_default_codecs,
@@ -270,24 +274,18 @@ defmodule Membrane.WebRTC.EndpointBin do
         fingerprint: state.dtls_fingerprint
       )
 
-    Membrane.Logger.debug(offer)
+    new_offer = to_string(offer)
+    media_offer = SDP.remove_sdp_header_data(new_offer)
 
-    {actions, state} =
-      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
-            candidate_gathering_check: nil <- state.candidate_gathering_state do
-        {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
-      else
-        tracks_check: _ -> {[], state}
-        candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
-      end
-
-    actions = [notify: {:signal, {:sdp_offer, to_string(offer)}}] ++ actions
+    actions = [notify: {:signal, {:sdp_offer, media_offer}}]
 
     {{:ok, actions}, state}
   end
 
+
   @impl true
   def handle_notification({:new_candidate_full, cand}, _from, _ctx, state) do
+    Membrane.Logger.info(cand)
     state = Map.update!(state, :candidates, &[cand | &1])
     {{:ok, notify_candidates([cand])}, state}
   end
@@ -307,13 +305,35 @@ defmodule Membrane.WebRTC.EndpointBin do
     {:ok, state}
   end
 
+  # @impl true
+  # def handle_other({:signal, {:sdp_answer, sdp}}, _ctx, state) do
+  #   Membrane.Logger.info(inspect(sdp))
+  #   {:ok, sdp} = sdp |> ExSDP.parse()
+
+  #   ssrc_to_mid =
+  #     sdp.media
+  #     |> Enum.filter(&(:sendonly in &1.attributes))
+  #     |> Enum.map(fn media ->
+  #       {:mid, mid} = Media.get_attribute(media, :mid)
+  #       %SSRC{id: ssrc} = Media.get_attribute(media, SSRC)
+
+  #       {ssrc, mid}
+  #     end)
+  #     |> Enum.into(%{})
+
+  #   actions = set_remote_credentials(sdp)
+  #   {{:ok, actions}, Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
+  # end
+
   @impl true
-  def handle_other({:signal, {:sdp_answer, sdp}}, _ctx, state) do
+  def handle_other({:signal, {:sdp_offer, sdp}}, ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
 
-    ssrc_to_mid =
-      sdp.media
+    send_only_sdp_media = sdp.media
       |> Enum.filter(&(:sendonly in &1.attributes))
+
+    ssrc_to_mid =
+      send_only_sdp_media
       |> Enum.map(fn media ->
         {:mid, mid} = Media.get_attribute(media, :mid)
         %SSRC{id: ssrc} = Media.get_attribute(media, SSRC)
@@ -322,7 +342,30 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
       |> Enum.into(%{})
 
-    actions = set_remote_credentials(sdp)
+    stream_id = Track.stream_id()
+
+    inbound_tracks = Enum.map(send_only_sdp_media, & SDP.create_track_from_sdp_media(&1,stream_id))
+
+
+    state = add_tracks(state,:inbound_tracks,inbound_tracks)
+    opts = %{ice: state.ice,fingerprint: state.dtls_fingerprint}
+
+    answer = SDP.prepare_answer_from_offer(sdp,opts)
+
+
+    {actions, state} =
+      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
+            candidate_gathering_check: nil <- state.candidate_gathering_state do
+        {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
+      else
+        tracks_check: _ -> {[], state}
+        candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
+      end
+
+    Membrane.Logger.info("ctx: #{inspect ctx}")
+
+
+    actions = [notify: {:signal, {:sdp_answer, to_string(answer)}}] ++  set_remote_credentials(sdp) ++ actions
     {{:ok, actions}, Map.put(state, :ssrc_to_mid, ssrc_to_mid)}
   end
 

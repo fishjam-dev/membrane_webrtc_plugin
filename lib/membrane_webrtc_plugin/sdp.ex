@@ -8,6 +8,8 @@ defmodule Membrane.WebRTC.SDP do
   alias Membrane.RTP.PayloadFormat
   alias Membrane.WebRTC.Track
 
+  require Membrane.Logger
+
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
   @doc """
@@ -75,9 +77,9 @@ defmodule Membrane.WebRTC.SDP do
     ]
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
-    |> ExSDP.add_attributes(attributes)
-    |> add_tracks(inbound_tracks, :recvonly, config)
-    |> add_tracks(outbound_tracks, :sendonly, config)
+      |> ExSDP.add_attributes(attributes)
+      |> add_tracks(inbound_tracks, :recvonly, config)
+      |> add_tracks(outbound_tracks, :sendonly, config)
   end
 
   defp add_tracks(sdp, tracks, direction, config) do
@@ -165,4 +167,87 @@ defmodule Membrane.WebRTC.SDP do
 
     [rtp_mapping, fmtp]
   end
+
+  defp drop_while(list, drop?) do
+    if list !== [] do
+      [head | tail] = list
+      if drop?.(head), do: drop_while(tail,drop?), else: list
+    else
+      []
+    end
+  end
+
+  @line_ending "\r\n"
+
+  def remove_sdp_header_data(sdp_offer) do
+    String.split(sdp_offer,@line_ending)
+      |> drop_while(&( !String.starts_with?(&1,"m=")))
+      |> Enum.join(@line_ending)
+  end
+
+
+
+  defp replace_media_for_answer(sdp_media, opts) do
+    # Membrane.Logger.info("media: #{inspect sdp_media}")
+    attrs = for attr <- sdp_media.attributes do
+      case attr do
+        {:ice_ufrag, _} -> {:ice_ufrag, opts.ice.ufrag}
+        {:ice_pwd, _} -> {:ice_pwd, opts.ice.pwd}
+        {:fingerprint, _} -> {:fingerprint, opts.fingerprint}
+        :sendonly -> :recvonly
+        :recvonly -> :sendonly
+        {:setup, :actpass} -> {:setup, :passive}
+        {"extmap", _} -> nil
+        {"rtcp-fb", _} -> nil
+        # %SSRC{id: _, attribute: "cname", value: _} = val -> val
+        %RTPMapping{encoding: "telephone-event"} -> nil
+        %RTPMapping{encoding: "ulpfec"} -> nil
+        %RTPMapping{encoding: "rtx"} -> nil
+        %RTPMapping{encoding: "red"} -> nil
+        # %RTPMapping{encoding: "H264"} -> nil
+        # %SSRC{} = _ -> nil
+        %FMTP{} = _ -> nil
+        x -> x
+      end
+    end
+    attrs = for attr <- attrs, attr !== nil, do: attr
+    %{sdp_media | attributes: attrs}
+  end
+
+  @spec prepare_answer_from_offer(%{:media => any, optional(any) => any}, any) :: %{
+          :media => list,
+          optional(any) => any
+        }
+  def prepare_answer_from_offer(sdp,opts) do
+    sdp = %{sdp | origin: ExSDP.Origin.new()}
+    %{sdp | media: Enum.map(sdp.media, & replace_media_for_answer(&1,opts))}
+  end
+
+  defp encoding_to_atom(encoding_name) do
+    case encoding_name do
+      "opus" -> :OPUS
+      "VP8" -> :VP8
+      x -> raise "Not supported now #{x}"
+    end
+  end
+
+  defp register_track_in_payload_formatter(sdp_media) do
+    [mapping | _] = for %RTPMapping{} = rtp_mapping <- sdp_media.attributes, do: rtp_mapping
+    Membrane.Logger.info("mapping: #{inspect mapping}")
+    # PayloadFormat.register_payload_type_mapping(mapping.payload_type,encoding_to_atom(mapping.encoding), mapping.clock_rate)
+    [encoding: encoding_to_atom(mapping.encoding), clock_rate: mapping.clock_rate, payload_type: mapping.payload_type ]
+  end
+
+  def create_track_from_sdp_media(sdp_media,stream_id) do
+    media_type = sdp_media.type
+
+    ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes,  do: ssrc.id)
+
+    mapping = register_track_in_payload_formatter(sdp_media)
+
+    opts = [ssrc: ssrc, encoding: mapping.encoding]
+
+    Track.new(media_type,stream_id, opts)
+  end
+
 end
