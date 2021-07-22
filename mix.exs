@@ -47,7 +47,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_dtls_plugin, "~> 0.4.0"},
       {:membrane_ice_plugin, "~> 0.5.0"},
       {:membrane_rtp_plugin,
-       github: "membraneframework/membrane_rtp_plugin", branch: "inband-rtcp"},
+       github: "membraneframework/membrane_rtp_plugin", branch: "decryptor-packet-filtering"},
       {:ex_libsrtp, "~> 0.1.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.1.0"},
       {:membrane_rtp_opus_plugin, "~> 0.3.0"},

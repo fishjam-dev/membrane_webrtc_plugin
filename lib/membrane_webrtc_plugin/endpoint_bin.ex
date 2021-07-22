@@ -98,6 +98,11 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
+              ],
+              drop_silent_packets?: [
+                spec: :boolean,
+                default: false,
+                description: "Defines if silent audio packets will be dropped. To drop silent audio frames RTP header VAD extension must be present"
               ]
 
   def_input_pad :input,
@@ -150,13 +155,29 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     rtp_input_ref = make_ref()
 
+
+    rtp_input_options = if opts.drop_silent_packets? do
+      # filter out silent audio frames
+      # it first check if given packet as RTP extension turned on (VAD) and returns
+      # true for silent packets (audio level equals 127)
+      filter = fn buffer ->
+        case buffer.payload do
+          <<_v_and_p :: 3, 1 :: 1,  _rest_before_extension :: 124, _id ::4, 0 :: 4, _v :: 1, 127 :: 7, _rest::binary >> -> true
+          _ -> false
+        end
+      end
+      [packet_filter: filter]
+    else
+      []
+    end
+
     links = [
       link(:rtp)
       |> via_out(Pad.ref(:rtcp_output, rtp_input_ref))
       |> to(:ice_funnel),
       link(:ice)
       |> via_out(Pad.ref(:output, 1))
-      |> via_in(Pad.ref(:rtp_input, rtp_input_ref))
+      |> via_in(Pad.ref(:rtp_input, rtp_input_ref), options: rtp_input_options)
       |> to(:rtp),
       link(:ice_funnel)
       |> via_out(:output)
