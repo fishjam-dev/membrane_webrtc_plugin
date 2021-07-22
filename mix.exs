@@ -36,7 +36,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
   defp deps do
     [
-      {:membrane_core, "~> 0.7.0", override: true},
+      {:membrane_core, "~> 0.7.0"},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, "~> 0.4.0"},
@@ -46,8 +46,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_rtp_h264_plugin, "~> 0.5.1"},
       {:membrane_dtls_plugin, "~> 0.4.0"},
       {:membrane_ice_plugin, "~> 0.5.0"},
-      {:membrane_rtp_plugin,
-       github: "membraneframework/membrane_rtp_plugin", branch: "inband-rtcp"},
+      {:membrane_rtp_plugin, "~> 0.7.0-alpha"},
       {:ex_libsrtp, "~> 0.1.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.1.0"},
       {:membrane_rtp_opus_plugin, "~> 0.3.0"},
