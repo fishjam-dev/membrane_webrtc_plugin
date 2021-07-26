@@ -188,7 +188,6 @@ defmodule Membrane.WebRTC.SDP do
 
 
   defp replace_media_for_answer(sdp_media, opts) do
-    # Membrane.Logger.info("media: #{inspect sdp_media}")
     attrs = for attr <- sdp_media.attributes do
       case attr do
         {:ice_ufrag, _} -> {:ice_ufrag, opts.ice.ufrag}
@@ -233,9 +232,8 @@ defmodule Membrane.WebRTC.SDP do
 
   defp register_track_in_payload_formatter(sdp_media) do
     [mapping | _] = for %RTPMapping{} = rtp_mapping <- sdp_media.attributes, do: rtp_mapping
-    Membrane.Logger.info("mapping: #{inspect mapping}")
-    # PayloadFormat.register_payload_type_mapping(mapping.payload_type,encoding_to_atom(mapping.encoding), mapping.clock_rate)
-    [encoding: encoding_to_atom(mapping.encoding), clock_rate: mapping.clock_rate, payload_type: mapping.payload_type ]
+    %{encoding_name: encoding_to_atom(mapping.encoding), clock_rate: mapping.clock_rate,
+      payload_type: mapping.payload_type }
   end
 
   def create_track_from_sdp_media(sdp_media,stream_id) do
@@ -245,9 +243,18 @@ defmodule Membrane.WebRTC.SDP do
 
     mapping = register_track_in_payload_formatter(sdp_media)
 
-    opts = [ssrc: ssrc, encoding: mapping.encoding]
+    opts = [ssrc: ssrc, encoding: mapping.encoding_name]
 
-    Track.new(media_type,stream_id, opts)
+    track = Track.new(media_type,stream_id, opts)
+
+    %{track: track, mapping: Map.put(mapping,:track_id,track.id)}
+  end
+
+
+  def get_type_and_ssrc(sdp_media) do
+    media_type = sdp_media.type
+    ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes,  do: ssrc.id)
+    [type: media_type,ssrc: ssrc]
   end
 
 end

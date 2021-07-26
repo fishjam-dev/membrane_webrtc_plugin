@@ -16,6 +16,8 @@ defmodule Membrane.WebRTC.Endpoint do
 
   defstruct id: nil, type: :participant, inbound_tracks: %{}, ctx: nil
 
+  require Membrane.Logger
+
   @spec new(id :: id(), type :: type(), inbound_tracks :: [Track.t()], ctx :: any()) ::
           Endpoint.t()
   def new(id, type, inbound_tracks, ctx) do
@@ -47,4 +49,10 @@ defmodule Membrane.WebRTC.Endpoint do
           Endpoint.t()
   def update_track_encoding(endpoint, track_id, value),
     do: update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
+
+  @spec add_tracks(Membrane.WebRTC.Endpoint.t(), any) :: Membrane.WebRTC.Endpoint.t()
+  def add_tracks(endpoint, tracks) do
+    tracks = Enum.reduce(tracks, %{}, & Map.put(&2, &1.id, &1))
+    %__MODULE__{endpoint | inbound_tracks: tracks}
+  end
 end
