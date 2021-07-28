@@ -103,7 +103,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: :boolean,
                 default: false,
                 description:
-                  "Defines if silent audio packets will be dropped. To drop silent audio frames RTP header VAD extension must be present"
+                  "Defines if silent audio packets should be dropped. To drop a silent audio packet one must enable VAD extension for audio stream"
               ]
 
   def_input_pad :input,
@@ -158,21 +158,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     rtp_input_options =
       if opts.drop_silent_packets? do
-        # filter out silent audio frames
-        # it first check if given packet as RTP extension turned on (VAD) and returns
-        # true for silent packets (audio level equals 127)
-        filter = fn buffer ->
-          case buffer.payload do
-            <<_v_and_p::3, 1::1, _rest_before_extension::124, _id::4, 0::4, _v::1, 127::7,
-              _rest::binary>> ->
-              true
-
-            _ ->
-              false
-          end
-        end
-
-        [packet_filter: filter]
+        [use_header_parser?: true, packet_filters: [Membrane.RTP.SilenceDiscarder]]
       else
         []
       end
