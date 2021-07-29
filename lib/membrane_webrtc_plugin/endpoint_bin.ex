@@ -195,7 +195,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    Membrane.Logger.info("input add: #{inspect track_id} \n tracks: #{inspect state.outbound_tracks}")
+    # Membrane.Logger.info("input add: #{inspect track_id} \n tracks: #{inspect state.outbound_tracks}")
     %{encoding: encoding} = ctx.options
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
     %{track_enabled: track_enabled} = ctx.pads[pad].options
@@ -340,7 +340,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   defp new_tracks?(inbound_tracks,state) do
     # Membrane.Logger.info("inbound_tracks: #{inspect inbound_tracks}")
-    Membrane.Logger.info("state: #{inspect Map.values(state.inbound_tracks)}")
+    # Membrane.Logger.info("state: #{inspect Map.values(state.inbound_tracks)}")
     state_tracks = Map.values(state.inbound_tracks) |> Enum.reduce([],& &2 ++ [&1.ssrc]) |> List.flatten()
 
     Enum.reduce(inbound_tracks,[], & &2 ++ &1.ssrc) |> Enum.map(& &1 in state_tracks) |> Enum.all?()
