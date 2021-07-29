@@ -4,6 +4,8 @@ defmodule Membrane.WebRTC.Endpoint do
   """
   alias Membrane.WebRTC.Track
 
+  require Membrane.Logger
+
   @type id() :: any()
   @type type() :: :screensharing | :participant
 
@@ -15,8 +17,6 @@ defmodule Membrane.WebRTC.Endpoint do
         }
 
   defstruct id: nil, type: :participant, inbound_tracks: %{}, ctx: nil
-
-  require Membrane.Logger
 
   @spec new(id :: id(), type :: type(), inbound_tracks :: [Track.t()], ctx :: any()) ::
           Endpoint.t()
@@ -34,7 +34,8 @@ defmodule Membrane.WebRTC.Endpoint do
     do: Map.values(endpoint.inbound_tracks) |> Enum.filter(&(&1.type == :video))
 
   @spec get_track_by_id(endpoint :: t(), id :: Track.id()) :: Track.t() | nil
-  def get_track_by_id(endpoint, id), do: endpoint.inbound_tracks[id]
+  def get_track_by_id(endpoint, id), do:    endpoint.inbound_tracks[id]
+
 
   @spec get_tracks(endpoint :: t()) :: [Track.t()]
   def get_tracks(endpoint), do: Map.values(endpoint.inbound_tracks)
@@ -47,12 +48,9 @@ defmodule Membrane.WebRTC.Endpoint do
 
   @spec update_track_encoding(endpoint :: Endpoint.t(), track_id :: Track.id(), encoding :: atom) ::
           Endpoint.t()
-  def update_track_encoding(endpoint, track_id, value),
-    do: update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
-
-  @spec add_tracks(Membrane.WebRTC.Endpoint.t(), any) :: Membrane.WebRTC.Endpoint.t()
-  def add_tracks(endpoint, tracks) do
-    tracks = Enum.reduce(tracks, %{}, & Map.put(&2, &1.id, &1))
-    %__MODULE__{endpoint | inbound_tracks: tracks}
+  def update_track_encoding(endpoint, track_id, value) do
+    Membrane.Logger.info("inbound: #{inspect endpoint.inbound_tracks}")
+    Membrane.Logger.info("track_id: #{inspect track_id}")
+    update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
   end
 end
