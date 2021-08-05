@@ -48,8 +48,6 @@ defmodule Membrane.WebRTC.Endpoint do
   @spec update_track_encoding(endpoint :: Endpoint.t(), track_id :: Track.id(), encoding :: atom) ::
           Endpoint.t()
   def update_track_encoding(endpoint, track_id, value) do
-    # Membrane.Logger.info("inbound: #{inspect endpoint.inbound_tracks}")
-    # Membrane.Logger.info("track_id: #{inspect track_id}")
     update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
   end
 end

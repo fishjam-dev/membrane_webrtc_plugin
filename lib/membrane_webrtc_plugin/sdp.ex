@@ -8,8 +8,6 @@ defmodule Membrane.WebRTC.SDP do
   alias Membrane.RTP.PayloadFormat
   alias Membrane.WebRTC.Track
 
-  require Membrane.Logger
-
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
   @doc """
@@ -94,15 +92,11 @@ defmodule Membrane.WebRTC.SDP do
         ) :: ExSDP.t()
   def create_answer(opts) do
     sdp = Keyword.fetch!(opts, :sdp)
-    mappings = Enum.map(sdp.media, &get_mapping_from_sdp_media(&1))
+    mappings = get_mid_to_mapping(sdp.media)
 
-    # TODO verify if sorting tracks this way allows for adding inbound tracks in updated offer
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
     mids = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
-
-    mappings =
-      Enum.zip(mids, mappings) |> Enum.reduce(%{}, &Map.merge(&2, %{elem(&1, 0) => elem(&1, 1)}))
 
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
@@ -248,50 +242,6 @@ defmodule Membrane.WebRTC.SDP do
     |> Enum.join(@line_ending)
   end
 
-  defp media_setup_type(sdp_media, inbound_ssrcs) do
-    [ssrc | _] = for %SSRC{id: id} <- sdp_media.attributes, do: id
-    if ssrc not in inbound_ssrcs, do: :active, else: :passive
-  end
-
-  defp replace_media_for_answer(sdp_media, opts) do
-    setup = media_setup_type(sdp_media, opts.ssrcs)
-
-    attrs =
-      for attr <- sdp_media.attributes do
-        case attr do
-          {:ice_ufrag, _} -> {:ice_ufrag, opts.ice.ufrag}
-          {:ice_pwd, _} -> {:ice_pwd, opts.ice.pwd}
-          {:fingerprint, _} -> {:fingerprint, opts.fingerprint}
-          :sendonly -> :recvonly
-          :recvonly -> :sendonly
-          {:setup, :actpass} -> {:setup, setup}
-          {"extmap", _} -> nil
-          {"rtcp-fb", _} -> nil
-          # %SSRC{id: _, attribute: "cname", value: _} = val -> val
-          %RTPMapping{encoding: "telephone-event"} -> nil
-          %RTPMapping{encoding: "ulpfec"} -> nil
-          %RTPMapping{encoding: "rtx"} -> nil
-          %RTPMapping{encoding: "red"} -> nil
-          # %RTPMapping{encoding: "H264"} -> nil
-          # %SSRC{} = _ -> nil
-          %FMTP{} = _ -> nil
-          x -> x
-        end
-      end
-
-    attrs = for attr <- attrs, attr !== nil, do: attr
-    %{sdp_media | attributes: attrs}
-  end
-
-  @spec prepare_answer_from_offer(%{:media => any, optional(any) => any}, any) :: %{
-          :media => list,
-          optional(any) => any
-        }
-  def prepare_answer_from_offer(sdp, opts) do
-    sdp = %{sdp | origin: ExSDP.Origin.new()}
-    %{sdp | media: Enum.map(sdp.media, &replace_media_for_answer(&1, opts))}
-  end
-
   defp encoding_to_atom(encoding_name) do
     case encoding_name do
       "opus" -> :OPUS
@@ -300,14 +250,21 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
+  def get_mid_to_mapping(sdp_media) do
+    mappings = Enum.map(sdp_media, &get_mapping_from_sdp_media(&1))
+    Enum.reduce(mappings, %{}, &Map.merge(&2, %{&1.mid => &1}))
+  end
+
   defp get_mapping_from_sdp_media(sdp_media) do
     [mapping | _] = for %RTPMapping{} = rtp_mapping <- sdp_media.attributes, do: rtp_mapping
+    {:mid, mid} = Media.get_attribute(sdp_media, :mid)
 
     %{
       encoding_name: encoding_to_atom(mapping.encoding),
       clock_rate: mapping.clock_rate,
       payload_type: mapping.payload_type,
-      params: mapping.params
+      params: mapping.params,
+      mid: mid
     }
   end
 
