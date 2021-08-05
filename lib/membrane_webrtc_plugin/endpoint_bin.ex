@@ -14,7 +14,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Membrane.Bin
   use Bunch
 
-  alias ExSDP.{Attribute.SSRC, Media}
+  alias ExSDP.{Media}
   alias Membrane.WebRTC.{SDP, Track}
 
   @type signal_message ::
