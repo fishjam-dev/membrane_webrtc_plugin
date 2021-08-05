@@ -21,8 +21,6 @@ defmodule Membrane.WebRTC.Track do
           enabled?: boolean()
         }
 
-  require Membrane.Logger
-
   @doc """
   Creates a new track.
 

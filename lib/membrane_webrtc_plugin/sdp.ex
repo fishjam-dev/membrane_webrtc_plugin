@@ -120,7 +120,7 @@ defmodule Membrane.WebRTC.SDP do
     |> add_tracks(outbound_tracks, :sendonly, config)
   end
 
-  defp track_data_to_RTPMapping(track_data),
+  defp track_data_to_rtp_mapping(track_data),
     do: %RTPMapping{
       clock_rate: track_data.clock_rate,
       encoding: track_data.encoding_name |> Atom.to_string() |> String.downcase(),
@@ -145,7 +145,7 @@ defmodule Membrane.WebRTC.SDP do
         do: [track_data.payload_type],
         else: get_payload_types(codecs)
 
-    track_data = if track_data != %{}, do: track_data_to_RTPMapping(track_data), else: %{}
+    track_data = if track_data != %{}, do: track_data_to_rtp_mapping(track_data), else: %{}
 
     %Media{
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_type)
@@ -236,6 +236,7 @@ defmodule Membrane.WebRTC.SDP do
 
   @line_ending "\r\n"
 
+  @spec remove_sdp_header_data(binary) :: binary
   def remove_sdp_header_data(sdp_offer) do
     String.split(sdp_offer, @line_ending)
     |> drop_while(&(!String.starts_with?(&1, "m=")))
@@ -250,6 +251,7 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
+  @spec get_mid_to_mapping(any) :: any
   def get_mid_to_mapping(sdp_media) do
     mappings = Enum.map(sdp_media, &get_mapping_from_sdp_media(&1))
     Enum.reduce(mappings, %{}, &Map.merge(&2, %{&1.mid => &1}))
@@ -268,6 +270,7 @@ defmodule Membrane.WebRTC.SDP do
     }
   end
 
+  @spec create_track_from_sdp_media(ExSDP.Media.t(), binary) :: %{mapping: any, track: any}
   def create_track_from_sdp_media(sdp_media, stream_id) do
     media_type = sdp_media.type
     {:mid, mid} = Media.get_attribute(sdp_media, :mid)
@@ -282,14 +285,17 @@ defmodule Membrane.WebRTC.SDP do
     %{track: track, mapping: Map.put(mapping, :track_id, track.id)}
   end
 
+  @spec filter_sdp_media(ExSDP.t(), any) :: [Media.t()]
   def filter_sdp_media(sdp, filter_function), do: Enum.filter(sdp.media, &filter_function.(&1))
 
+  @spec get_type_and_ssrc(Media.t()) :: [type: any, ssrc: any]
   def get_type_and_ssrc(sdp_media) do
     media_type = sdp_media.type
     ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes, do: ssrc.id)
     [type: media_type, ssrc: ssrc]
   end
 
+  @spec add_ssrc_to_media_from_tracks(Media.t() | [Media.t()], any, any, [any]) :: any
   def add_ssrc_to_media_from_tracks([media | medias], audios, videos, acc) do
     case media.type do
       :audio ->
@@ -304,5 +310,6 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
+  @spec add_ssrc_to_media_from_tracks([], any, any, [any]) :: any
   def add_ssrc_to_media_from_tracks([], _audio, _video, acc), do: acc
 end
