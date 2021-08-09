@@ -3,9 +3,8 @@ defmodule Membrane.WebRTC.SDP do
   Module containing helper functions for creating SPD offer.
   """
 
-  alias ExSDP.Attribute.{RTPMapping, MSID, FMTP, SSRC, Group}
+  alias ExSDP.Attribute.{RTPMapping, MSID, SSRC, Group}
   alias ExSDP.{ConnectionData, Media}
-  alias Membrane.RTP.PayloadFormat
   alias Membrane.WebRTC.Track
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
@@ -49,8 +48,6 @@ defmodule Membrane.WebRTC.SDP do
   def create_offer(opts) do
     mappings = Keyword.get(opts, :mappings, %{})
 
-    use_default_codecs = Keyword.get(opts, :use_default_codecs, true)
-
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
@@ -90,11 +87,9 @@ defmodule Membrane.WebRTC.SDP do
           video_codecs: [ExSDP.Attribute.t()],
           inbound_tracks: [Track.t()],
           outbound_tracks: [Track.t()],
-          sdp: ExSDP.t(),
           mappings: %{}
         ) :: ExSDP.t()
   def create_answer(opts) do
-    sdp = Keyword.fetch!(opts, :sdp)
     mappings = Keyword.fetch!(opts, :mappings)
 
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
@@ -206,44 +201,6 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp get_default_audio_codecs(fmt_mappings), do: get_opus(fmt_mappings)
-
-  defp get_default_video_codecs(fmt_mappings),
-    do: get_vp8(fmt_mappings) ++ get_h264(fmt_mappings)
-
-  defp get_opus(fmt_mappings) do
-    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:OPUS)
-    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
-    pt = Map.get(fmt_mappings, :OPUS, pt)
-    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", params: 2, payload_type: pt}
-    fmtp = %FMTP{pt: pt, useinbandfec: true}
-    [rtp_mapping, fmtp]
-  end
-
-  defp get_vp8(fmt_mappings) do
-    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:VP8)
-    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
-    pt = Map.get(fmt_mappings, :VP8, pt)
-    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", payload_type: pt}
-    [rtp_mapping]
-  end
-
-  defp get_h264(fmt_mappings) do
-    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:H264)
-    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
-    pt = Map.get(fmt_mappings, :H264, pt)
-    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", payload_type: pt}
-
-    fmtp = %FMTP{
-      pt: pt,
-      level_asymmetry_allowed: true,
-      packetization_mode: 1,
-      profile_level_id: 0x42E01F
-    }
-
-    [rtp_mapping, fmtp]
-  end
-
   defp drop_while(list, drop?) do
     if list !== [] do
       [head | tail] = list
@@ -295,7 +252,6 @@ defmodule Membrane.WebRTC.SDP do
   @spec create_track_from_sdp_media(ExSDP.Media.t(), binary) :: %{mapping: any, track: any}
   def create_track_from_sdp_media(sdp_media, stream_id) do
     media_type = sdp_media.type
-    {:mid, mid} = Media.get_attribute(sdp_media, :mid)
 
     ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes, do: ssrc.id)
 

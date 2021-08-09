@@ -316,9 +316,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     {:ok, state}
   end
 
-  defp add_mappings_to_state(tracks_mappings, state) do
-  end
-
   defp get_inbound_tracks_from_sdp(sdp) do
     send_only_sdp_media = SDP.filter_sdp_media(sdp, &(:sendonly in &1.attributes))
 
