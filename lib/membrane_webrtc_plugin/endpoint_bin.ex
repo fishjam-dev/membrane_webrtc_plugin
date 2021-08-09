@@ -14,7 +14,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Membrane.Bin
   use Bunch
 
-  alias ExSDP.{Media}
+  alias ExSDP.Media
   alias Membrane.WebRTC.{SDP, Track}
 
   @type signal_message ::
@@ -143,7 +143,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
         port_range: opts.port_range,
-        controlling_mode: false,
+        controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
       },
@@ -182,7 +182,10 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidates: [],
         candidate_gathering_state: nil,
         dtls_fingerprint: nil,
-        trackid_to_ssrc: []
+        ssrc_to_track_id: %{},
+        track_id_to_mapping: %{},
+        mappings: %{},
+        ice: %{}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -202,7 +205,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
     %{track_enabled: track_enabled} = ctx.pads[pad].options
 
-    mapping = state.mid_to_mapping[track_id]
+    mapping = Map.get(state.track_id_to_mapping, track_id)
 
     encoding_specific_links =
       case encoding do
@@ -233,8 +236,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
 
-    [%{clock_rate: clock_rate} | _] =
-      for mapping <- Map.values(state.mappings), mapping.track_id == track_id, do: mapping
+    %{clock_rate: clock_rate} = Map.get(state.track_id_to_mapping, track_id)
 
     %{track_enabled: track_enabled, extensions: extensions, packet_filters: packet_filters} =
       ctx.pads[pad].options
@@ -259,9 +261,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_notification({:new_rtp_stream, ssrc, pt}, _from, _ctx, state) do
-    %{encoding_name: encoding} = Map.get(state.mappings, pt)
-    mid = Map.fetch!(state.ssrc_to_mid, ssrc)
-    track = Map.fetch!(state.inbound_tracks, mid)
+    %{encoding_name: encoding} =
+      Enum.find(Map.values(state.track_id_to_mapping), &(&1.payload_type === pt))
+
+    track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
+    track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | ssrc: ssrc, encoding: encoding}
     state = put_in(state, [:inbound_tracks, track.id], track)
     {{:ok, notify: {:new_track, track.id, encoding}}, state}
@@ -276,24 +280,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
-    state = Map.put(state, :ice, %{ufrag: ice_ufrag, pwd: ice_pwd})
+    state = %{state | ice: %{ufrag: ice_ufrag, pwd: ice_pwd}}
 
-    offer =
-      SDP.create_offer(
-        inbound_tracks: Map.values(state.outbound_tracks),
-        outbound_tracks: Map.values(%{}),
-        video_codecs: state.video_codecs,
-        audio_codecs: state.audio_codecs,
-        use_default_codecs: state.use_default_codecs,
-        ice_ufrag: ice_ufrag,
-        ice_pwd: ice_pwd,
-        fingerprint: state.dtls_fingerprint
-      )
+    tracks_types = Map.values(state.outbound_tracks) |> Enum.map(& &1.type)
 
-    only_media = offer.media
-    only_media_offer = Enum.reduce(only_media, "", &(&2 <> "m=" <> to_string(&1) <> "\r\n"))
-
-    actions = [notify: {:signal, {:sdp_offer, only_media_offer}}]
+    actions = [notify: {:signal, {:server_tracks, tracks_types}}]
 
     {{:ok, actions}, state}
   end
@@ -319,11 +310,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     {:ok, state}
   end
 
-  defp add_mappings_to_state(tracks_mappings, state) do
-    mappings = Enum.reduce(tracks_mappings, %{}, &Map.put(&2, &1.payload_type, &1))
-    Map.put(state, :mappings, mappings)
-  end
-
   defp get_inbound_tracks_from_sdp(sdp) do
     send_only_sdp_media = SDP.filter_sdp_media(sdp, &(:sendonly in &1.attributes))
 
@@ -340,61 +326,71 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp new_tracks?(inbound_tracks, state) do
-    state_tracks =
-      Map.values(state.inbound_tracks) |> Enum.reduce([], &(&2 ++ [&1.ssrc])) |> List.flatten()
-
-    Enum.reduce(inbound_tracks, [], &(&2 ++ [&1.ssrc]))
-    |> Enum.map(&(&1 in state_tracks))
-    |> Enum.all?()
-  end
-
-  defp set_inbound_tracks(tracks, state) do
-    tracks = Map.new(tracks, &{&1.id, &1})
-    Map.put(state, :inbound_tracks, tracks)
-  end
-
-  defp set_ssrc_to_mid(inbound_tracks, state) do
-    ssrc_to_mid =
-      inbound_tracks
-      |> Enum.map(fn track ->
-        mid = track.id
-        ssrc = track.ssrc
-        {ssrc, mid}
-      end)
-      |> Enum.into(%{})
-
-    Map.put(state, :ssrc_to_mid, ssrc_to_mid)
+    known_ssrcs = Enum.map(state.inbound_tracks, fn {_id, track} -> track.ssrc end)
+    Enum.any?(inbound_tracks, &(&1.ssrc not in known_ssrcs))
   end
 
   defp new_tracks_change(tracks, mappings, state) do
-    state = add_mappings_to_state(mappings, state)
+    state = %{state | mappings: mappings}
 
-    state = set_inbound_tracks(tracks, state)
+    track_id_to_track = Map.new(tracks, &{&1.id, &1})
+    state = %{state | inbound_tracks: track_id_to_track}
 
-    state = set_ssrc_to_mid(tracks, state)
+    ssrc_to_track_id = Map.new(tracks, fn track -> {track.ssrc, track.id} end)
+    state = %{state | ssrc_to_track_id: ssrc_to_track_id}
 
     actions = [notify: {:new_tracks, tracks}]
     {actions, state}
   end
 
-  defp add_track_id_to_mapping_in_state(sdp, state) do
-    mid_to_mapping = SDP.get_mid_to_mapping(sdp.media)
-    Map.put(state, :mid_to_mapping, mid_to_mapping)
+  defp get_track_id_to_mapping_by_type(mid_to_mapping, tracks, type) do
+    mappings = Enum.filter(mid_to_mapping, &(&1.type === type))
+    tracks = Enum.filter(tracks, &(&1.type === type))
+
+    Enum.zip(mappings, tracks)
+    |> Map.new(fn {mapping, track} -> {track.id, mapping} end)
   end
+
+  defp get_track_id_to_mapping(sdp, inbound_mappings, outbound_tracks) do
+    inbound_track_id_to_mapping =
+      Map.new(inbound_mappings, fn mapping -> {mapping.track_id, mapping} end)
+
+    mid_to_mapping = SDP.get_mid_to_mapping(sdp)
+
+    inbound_mids = Enum.map(inbound_mappings, & &1.mid)
+
+    outbound_mid_to_mapping =
+      Map.values(mid_to_mapping) |> Enum.filter(&(&1.mid not in inbound_mids))
+
+    outbound_tracks = Map.values(outbound_tracks)
+
+    audio_tracks =
+      get_track_id_to_mapping_by_type(outbound_mid_to_mapping, outbound_tracks, :audio)
+
+    video_tracks =
+      get_track_id_to_mapping_by_type(outbound_mid_to_mapping, outbound_tracks, :video)
+
+    inbound_track_id_to_mapping |> Map.merge(audio_tracks) |> Map.merge(video_tracks)
+  end
+
+  defp get_mid_to_track_id(track_id_to_mappings),
+    do: Map.new(track_id_to_mappings, fn {track_id, mapping} -> {mapping.mid, track_id} end)
 
   @impl true
   def handle_other({:signal, {:sdp_offer, sdp}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
 
-    state = add_track_id_to_mapping_in_state(sdp, state)
-
     {inbound_tracks, mappings} = get_inbound_tracks_from_sdp(sdp)
 
+    state = %{
+      state
+      | track_id_to_mapping: get_track_id_to_mapping(sdp, mappings, state.outbound_tracks)
+    }
+
     {link_notify, state} =
-      case not new_tracks?(inbound_tracks, state) do
-        true -> new_tracks_change(inbound_tracks, mappings, state)
-        false -> {[], state}
-      end
+      if new_tracks?(inbound_tracks, state),
+        do: new_tracks_change(inbound_tracks, mappings, state),
+        else: {[], state}
 
     answer =
       SDP.create_answer(
@@ -403,10 +399,10 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
-        fmt_mappings: mappings,
         sdp: sdp,
         video_codecs: state.video_codecs,
-        audio_codecs: state.audio_codecs
+        audio_codecs: state.audio_codecs,
+        mappings: state.track_id_to_mapping
       )
 
     {actions, state} =
@@ -421,8 +417,10 @@ defmodule Membrane.WebRTC.EndpointBin do
     actions = actions ++ link_notify
 
     actions =
-      [notify: {:signal, {:sdp_answer, to_string(answer)}}] ++
-        set_remote_credentials(sdp) ++ actions
+      [notify: {:mid_to_track, get_mid_to_track_id(state.track_id_to_mapping)}] ++
+        [notify: {:signal, {:sdp_answer, to_string(answer)}}] ++
+        set_remote_credentials(sdp) ++
+        actions
 
     {{:ok, actions}, state}
   end
@@ -430,12 +428,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_other({:signal, {:candidate, candidate}}, _ctx, state) do
     {{:ok, forward: {:ice, {:set_remote_candidate, "a=" <> candidate, 1}}}, state}
-  end
-
-  @impl true
-  def handle_other({:change_trackid_to_ssrc, trackid_to_ssrc}, _ctx, state) do
-    state = Map.put(state, :trackid_to_ssrc, trackid_to_ssrc)
-    {:ok, state}
   end
 
   @impl true

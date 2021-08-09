@@ -4,8 +4,6 @@ defmodule Membrane.WebRTC.Endpoint do
   """
   alias Membrane.WebRTC.Track
 
-  require Membrane.Logger
-
   @type id() :: any()
   @type type() :: :screensharing | :participant
 
@@ -47,7 +45,6 @@ defmodule Membrane.WebRTC.Endpoint do
 
   @spec update_track_encoding(endpoint :: Endpoint.t(), track_id :: Track.id(), encoding :: atom) ::
           Endpoint.t()
-  def update_track_encoding(endpoint, track_id, value) do
-    update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
-  end
+  def update_track_encoding(endpoint, track_id, value),
+    do: update_in(endpoint.inbound_tracks[track_id], &%Track{&1 | encoding: value})
 end

@@ -3,9 +3,8 @@ defmodule Membrane.WebRTC.SDP do
   Module containing helper functions for creating SPD offer.
   """
 
-  alias ExSDP.Attribute.{RTPMapping, MSID, FMTP, SSRC, Group}
+  alias ExSDP.Attribute.{RTPMapping, MSID, SSRC, Group}
   alias ExSDP.{ConnectionData, Media}
-  alias Membrane.RTP.PayloadFormat
   alias Membrane.WebRTC.Track
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
@@ -43,35 +42,35 @@ defmodule Membrane.WebRTC.SDP do
           video_codecs: [ExSDP.Attribute.t()],
           inbound_tracks: [Track.t()],
           outbound_tracks: [Track.t()],
-          use_default_codecs: [:audio | :video]
+          use_default_codecs: [:audio | :video],
+          mappings: %{}
         ) :: ExSDP.t()
   def create_offer(opts) do
-    fmt_mappings = Keyword.get(opts, :fmt_mappings, %{})
-
-    use_default_codecs = Keyword.get(opts, :use_default_codecs, true)
+    mappings = Keyword.get(opts, :mappings, %{})
 
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
       fingerprint: Keyword.fetch!(opts, :fingerprint),
       codecs: %{
-        audio:
-          Keyword.get(opts, :audio_codecs, []) ++
-            if(:audio in use_default_codecs, do: get_default_audio_codecs(fmt_mappings), else: []),
-        video:
-          Keyword.get(opts, :video_codecs, []) ++
-            if(:video in use_default_codecs, do: get_default_video_codecs(fmt_mappings), else: [])
-      }
+        audio: Keyword.get(opts, :audio_codecs, []),
+        video: Keyword.get(opts, :video_codecs, [])
+      },
+      fmt_mappings: mappings
     }
 
     # TODO verify if sorting tracks this way allows for adding inbound tracks in updated offer
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
-    mids = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
+
+    mids =
+      Enum.map(inbound_tracks ++ outbound_tracks, &Map.get(mappings, &1.id))
+      |> Enum.filter(&(&1 !== nil))
+      |> Enum.map(& &1.mid)
 
     attributes = [
       %Group{semantics: "BUNDLE", mids: mids},
-      "extmap:6 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
+      "extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
     ]
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
@@ -88,15 +87,19 @@ defmodule Membrane.WebRTC.SDP do
           video_codecs: [ExSDP.Attribute.t()],
           inbound_tracks: [Track.t()],
           outbound_tracks: [Track.t()],
-          sdp: ExSDP.t()
+          mappings: %{}
         ) :: ExSDP.t()
   def create_answer(opts) do
-    sdp = Keyword.fetch!(opts, :sdp)
-    mappings = get_mid_to_mapping(sdp.media)
+    mappings = Keyword.fetch!(opts, :mappings)
 
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
-    mids = Enum.map(inbound_tracks ++ outbound_tracks, & &1.id)
+    mids = Enum.map(inbound_tracks ++ outbound_tracks, &Map.get(mappings, &1.id).mid)
+
+    outbound_tracks =
+      Enum.map(outbound_tracks, &{Map.get(mappings, &1.id), &1})
+      |> Enum.sort_by(&elem(&1, 0).mid)
+      |> Enum.map(&elem(&1, 1))
 
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
@@ -110,8 +113,7 @@ defmodule Membrane.WebRTC.SDP do
     }
 
     attributes = [
-      %Group{semantics: "BUNDLE", mids: mids},
-      "extmap:6 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
+      %Group{semantics: "BUNDLE", mids: mids}
     ]
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
@@ -132,6 +134,17 @@ defmodule Membrane.WebRTC.SDP do
     ExSDP.add_media(sdp, Enum.map(tracks, &create_sdp_media(&1, direction, config)))
   end
 
+  defp add_standard_extensions(media) do
+    case media.type do
+      :audio ->
+        media
+        |> Media.add_attribute("extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on")
+
+      _media ->
+        media
+    end
+  end
+
   defp create_sdp_media(track, direction, config) do
     codecs = config.codecs[track.type]
 
@@ -145,7 +158,7 @@ defmodule Membrane.WebRTC.SDP do
         do: [track_data.payload_type],
         else: get_payload_types(codecs)
 
-    track_data = if track_data != %{}, do: track_data_to_rtp_mapping(track_data), else: %{}
+    rtp_mapping = if track_data != %{}, do: track_data_to_rtp_mapping(track_data), else: %{}
 
     %Media{
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_type)
@@ -158,11 +171,12 @@ defmodule Membrane.WebRTC.SDP do
       {:ice_options, "trickle"},
       {:fingerprint, config.fingerprint},
       {:setup, if(direction == :recvonly, do: :passive, else: :active)},
-      {:mid, track.id},
+      {:mid, if(track_data !== %{}, do: track_data.mid, else: "")},
       MSID.new(track.stream_id),
       :rtcp_mux
     ])
-    |> Media.add_attributes(if track_data !== %{}, do: [track_data], else: codecs)
+    |> Media.add_attributes(if rtp_mapping !== %{}, do: [rtp_mapping], else: codecs)
+    |> add_standard_extensions()
     |> add_extensions(track.type, payload_type)
     |> add_ssrc(track)
   end
@@ -187,77 +201,23 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp get_default_audio_codecs(fmt_mappings), do: get_opus(fmt_mappings)
-
-  defp get_default_video_codecs(fmt_mappings),
-    do: get_vp8(fmt_mappings) ++ get_h264(fmt_mappings)
-
-  defp get_opus(fmt_mappings) do
-    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:OPUS)
-    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
-    pt = Map.get(fmt_mappings, :OPUS, pt)
-    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", params: 2, payload_type: pt}
-    fmtp = %FMTP{pt: pt, useinbandfec: true}
-    [rtp_mapping, fmtp]
-  end
-
-  defp get_vp8(fmt_mappings) do
-    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:VP8)
-    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
-    pt = Map.get(fmt_mappings, :VP8, pt)
-    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", payload_type: pt}
-    [rtp_mapping]
-  end
-
-  defp get_h264(fmt_mappings) do
-    %PayloadFormat{payload_type: pt} = PayloadFormat.get(:H264)
-    %{encoding_name: en, clock_rate: cr} = PayloadFormat.get_payload_type_mapping(pt)
-    pt = Map.get(fmt_mappings, :H264, pt)
-    rtp_mapping = %RTPMapping{clock_rate: cr, encoding: "#{en}", payload_type: pt}
-
-    fmtp = %FMTP{
-      pt: pt,
-      level_asymmetry_allowed: true,
-      packetization_mode: 1,
-      profile_level_id: 0x42E01F
-    }
-
-    [rtp_mapping, fmtp]
-  end
-
-  defp drop_while(list, drop?) do
-    if list !== [] do
-      [head | tail] = list
-      if drop?.(head), do: drop_while(tail, drop?), else: list
-    else
-      []
-    end
-  end
-
-  @line_ending "\r\n"
-
-  @spec remove_sdp_header_data(binary) :: binary
-  def remove_sdp_header_data(sdp_offer) do
-    String.split(sdp_offer, @line_ending)
-    |> drop_while(&(!String.starts_with?(&1, "m=")))
-    |> Enum.join(@line_ending)
-  end
-
   defp encoding_to_atom(encoding_name) do
     case encoding_name do
       "opus" -> :OPUS
       "VP8" -> :VP8
+      "H264" -> :H264
       x -> raise "Not supported now #{x}"
     end
   end
 
   @spec get_mid_to_mapping(any) :: any
-  def get_mid_to_mapping(sdp_media) do
-    mappings = Enum.map(sdp_media, &get_mapping_from_sdp_media(&1))
+  def get_mid_to_mapping(sdp) do
+    mappings = Enum.map(sdp.media, &get_mapping_from_sdp_media(&1))
     Enum.reduce(mappings, %{}, &Map.merge(&2, %{&1.mid => &1}))
   end
 
   defp get_mapping_from_sdp_media(sdp_media) do
+    media_type = sdp_media.type
     [mapping | _] = for %RTPMapping{} = rtp_mapping <- sdp_media.attributes, do: rtp_mapping
     {:mid, mid} = Media.get_attribute(sdp_media, :mid)
 
@@ -266,19 +226,20 @@ defmodule Membrane.WebRTC.SDP do
       clock_rate: mapping.clock_rate,
       payload_type: mapping.payload_type,
       params: mapping.params,
-      mid: mid
+      mid: mid,
+      type: media_type
     }
   end
 
   @spec create_track_from_sdp_media(ExSDP.Media.t(), binary) :: %{mapping: any, track: any}
   def create_track_from_sdp_media(sdp_media, stream_id) do
     media_type = sdp_media.type
-    {:mid, mid} = Media.get_attribute(sdp_media, :mid)
-    [ssrc | _] = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes, do: ssrc.id)
+
+    ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes, do: ssrc.id)
 
     mapping = get_mapping_from_sdp_media(sdp_media)
 
-    opts = [ssrc: ssrc, encoding: mapping.encoding_name, id: mid]
+    opts = [ssrc: List.first(ssrc), encoding: mapping.encoding_name]
 
     track = Track.new(media_type, stream_id, opts)
 
@@ -287,29 +248,4 @@ defmodule Membrane.WebRTC.SDP do
 
   @spec filter_sdp_media(ExSDP.t(), any) :: [Media.t()]
   def filter_sdp_media(sdp, filter_function), do: Enum.filter(sdp.media, &filter_function.(&1))
-
-  @spec get_type_and_ssrc(Media.t()) :: [type: any, ssrc: any]
-  def get_type_and_ssrc(sdp_media) do
-    media_type = sdp_media.type
-    ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes, do: ssrc.id)
-    [type: media_type, ssrc: ssrc]
-  end
-
-  @spec add_ssrc_to_media_from_tracks(Media.t() | [Media.t()], any, any, [any]) :: any
-  def add_ssrc_to_media_from_tracks([media | medias], audios, videos, acc) do
-    case media.type do
-      :audio ->
-        [audio | audios] = audios
-        media = add_ssrc(media, audio)
-        add_ssrc_to_media_from_tracks(medias, audios, videos, acc ++ [media])
-
-      :video ->
-        [video | videos] = videos
-        media = add_ssrc(media, video)
-        add_ssrc_to_media_from_tracks(medias, audios, videos, acc ++ [media])
-    end
-  end
-
-  @spec add_ssrc_to_media_from_tracks([], any, any, [any]) :: any
-  def add_ssrc_to_media_from_tracks([], _audio, _video, acc), do: acc
 end
