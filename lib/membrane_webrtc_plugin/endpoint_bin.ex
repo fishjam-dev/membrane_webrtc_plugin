@@ -138,7 +138,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
         port_range: opts.port_range,
-        controlling_mode: false,
+        controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
       },
@@ -177,8 +177,10 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidates: [],
         candidate_gathering_state: nil,
         dtls_fingerprint: nil,
-        ssrc_to_mid: %{},
-        track_id_to_mapping: %{}
+        ssrc_to_track_id: %{},
+        track_id_to_mapping: %{},
+        mappings: %{},
+        ice: %{}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -198,7 +200,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
     %{track_enabled: track_enabled} = ctx.pads[pad].options
 
-    mapping = state.track_id_to_mapping[track_id]
+    mapping = Map.get(state.track_id_to_mapping, track_id)
 
     encoding_specific_links =
       case encoding do
@@ -229,8 +231,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
 
-    [%{clock_rate: clock_rate} | _] =
-      for mapping <- state.mappings, mapping.track_id == track_id, do: mapping
+    %{clock_rate: clock_rate} = Map.get(state.track_id_to_mapping, track_id)
 
     %{track_enabled: track_enabled, extensions: extensions} = ctx.pads[pad].options
 
@@ -254,11 +255,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_notification({:new_rtp_stream, ssrc, pt}, _from, _ctx, state) do
-    [%{encoding_name: encoding} | _] =
-      for mapping <- state.mappings, mapping.payload_type == pt, do: mapping
+    %{encoding_name: encoding} =
+      Enum.find(Map.values(state.track_id_to_mapping), &(&1.payload_type === pt))
 
-    mid = Map.fetch!(state.ssrc_to_mid, ssrc)
-    track = Map.fetch!(state.inbound_tracks, mid)
+    track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
+    track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | ssrc: ssrc, encoding: encoding}
     state = put_in(state, [:inbound_tracks, track.id], track)
     {{:ok, notify: {:new_track, track.id, encoding}}, state}
@@ -273,24 +274,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
-    state = Map.put(state, :ice, %{ufrag: ice_ufrag, pwd: ice_pwd})
+    state = %{state | ice: %{ufrag: ice_ufrag, pwd: ice_pwd}}
 
-    offer =
-      SDP.create_offer(
-        inbound_tracks: Map.values(state.outbound_tracks),
-        outbound_tracks: Map.values(%{}),
-        video_codecs: state.video_codecs,
-        audio_codecs: state.audio_codecs,
-        use_default_codecs: state.use_default_codecs,
-        ice_ufrag: ice_ufrag,
-        ice_pwd: ice_pwd,
-        fingerprint: state.dtls_fingerprint,
-        mappings: state.track_id_to_mapping
-      )
+    tracks_types = Map.values(state.outbound_tracks) |> Enum.map(& &1.type)
 
-    only_media = offer.media |> Enum.map(& &1.type)
-
-    actions = [notify: {:signal, {:server_tracks, only_media}}]
+    actions = [notify: {:signal, {:server_tracks, tracks_types}}]
 
     {{:ok, actions}, state}
   end
@@ -332,77 +320,55 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp new_tracks?(inbound_tracks, state) do
-    state_tracks =
-      Map.values(state.inbound_tracks) |> Enum.reduce([], &(&2 ++ [&1.ssrc])) |> List.flatten()
-
-    Enum.reduce(inbound_tracks, [], &(&2 ++ [&1.ssrc]))
-    |> Enum.map(&(&1 in state_tracks))
-    |> Enum.all?()
-    |> Kernel.not()
-  end
-
-  defp set_inbound_tracks(tracks, state) do
-    tracks = Map.new(tracks, &{&1.id, &1})
-    Map.put(state, :inbound_tracks, tracks)
-  end
-
-  defp set_ssrc_to_mid(inbound_tracks, state) do
-    ssrc_to_mid =
-      inbound_tracks
-      |> Enum.map(fn track ->
-        mid = track.id
-        ssrc = track.ssrc
-        {ssrc, mid}
-      end)
-      |> Enum.into(%{})
-
-    %{state | ssrc_to_mid: ssrc_to_mid}
+    known_ssrcs = Enum.map(state.inbound_tracks, fn {_id, track} -> track.ssrc end)
+    Enum.any?(inbound_tracks, &(&1.ssrc not in known_ssrcs))
   end
 
   defp new_tracks_change(tracks, mappings, state) do
-    state = Map.put(state, :mappings, mappings)
+    state = %{state | mappings: mappings}
 
-    state = set_inbound_tracks(tracks, state)
+    track_id_to_track = Map.new(tracks, &{&1.id, &1})
+    state = %{state | inbound_tracks: track_id_to_track}
 
-    state = set_ssrc_to_mid(tracks, state)
+    ssrc_to_track_id = Map.new(tracks, fn track -> {track.ssrc, track.id} end)
+    state = %{state | ssrc_to_track_id: ssrc_to_track_id}
 
     actions = [notify: {:new_tracks, tracks}]
     {actions, state}
   end
 
-  defp get_track_id_to_mapping(mid_to_mapping, mids, tracks, type) do
-    mids = Enum.filter(mids, &(&1.type === type))
+  defp get_track_id_to_mapping_by_type(mid_to_mapping, tracks, type) do
+    mappings = Enum.filter(mid_to_mapping, &(&1.type === type))
     tracks = Enum.filter(tracks, &(&1.type === type))
 
-    Enum.zip(mids, tracks)
-    |> Enum.reduce(
-      %{},
-      &Map.merge(&2, %{elem(&1, 1).id => Map.get(mid_to_mapping, elem(&1, 0).mid)})
-    )
+    Enum.zip(mappings, tracks)
+    |> Map.new(fn {mapping, track} -> {track.id, mapping} end)
   end
 
-  defp add_track_id_to_mapping_in_state(sdp, state, inbound_mappings) do
-    track_id_to_mapping = Enum.reduce(inbound_mappings, %{}, &Map.merge(&2, %{&1.track_id => &1}))
+  defp get_track_id_to_mapping(sdp, inbound_mappings, outbound_tracks) do
+    inbound_track_id_to_mapping =
+      Map.new(inbound_mappings, fn mapping -> {mapping.track_id, mapping} end)
+
     mid_to_mapping = SDP.get_mid_to_mapping(sdp)
+
     inbound_mids = Enum.map(inbound_mappings, & &1.mid)
-    outbound_mids = Map.values(mid_to_mapping) |> Enum.filter(&(&1.mid not in inbound_mids))
 
-    outbound_tracks = Map.values(state.outbound_tracks)
+    outbound_mid_to_mapping =
+      Map.values(mid_to_mapping) |> Enum.filter(&(&1.mid not in inbound_mids))
 
-    track_id_to_mapping =
-      track_id_to_mapping
-      |> Map.merge(
-        get_track_id_to_mapping(mid_to_mapping, outbound_mids, outbound_tracks, :audio)
-      )
-      |> Map.merge(
-        get_track_id_to_mapping(mid_to_mapping, outbound_mids, outbound_tracks, :video)
-      )
+    outbound_tracks = Map.values(outbound_tracks)
 
-    %{state | track_id_to_mapping: track_id_to_mapping}
+    audio_tracks =
+      get_track_id_to_mapping_by_type(outbound_mid_to_mapping, outbound_tracks, :audio)
+
+    video_tracks =
+      get_track_id_to_mapping_by_type(outbound_mid_to_mapping, outbound_tracks, :video)
+
+    inbound_track_id_to_mapping |> Map.merge(audio_tracks) |> Map.merge(video_tracks)
   end
 
   defp get_mid_to_track_id(track_id_to_mappings),
-    do: Enum.reduce(track_id_to_mappings, %{}, &Map.merge(&2, %{elem(&1, 1).mid => elem(&1, 0)}))
+    do: Map.new(track_id_to_mappings, fn {track_id, mapping} -> {mapping.mid, track_id} end)
 
   @impl true
   def handle_other({:signal, {:sdp_offer, sdp}}, _ctx, state) do
@@ -410,7 +376,10 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {inbound_tracks, mappings} = get_inbound_tracks_from_sdp(sdp)
 
-    state = add_track_id_to_mapping_in_state(sdp, state, mappings)
+    state = %{
+      state
+      | track_id_to_mapping: get_track_id_to_mapping(sdp, mappings, state.outbound_tracks)
+    }
 
     {link_notify, state} =
       if new_tracks?(inbound_tracks, state),

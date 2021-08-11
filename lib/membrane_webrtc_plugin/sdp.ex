@@ -201,24 +201,6 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp drop_while(list, drop?) do
-    if list !== [] do
-      [head | tail] = list
-      if drop?.(head), do: drop_while(tail, drop?), else: list
-    else
-      []
-    end
-  end
-
-  @line_ending "\r\n"
-
-  @spec remove_sdp_header_data(binary) :: binary
-  def remove_sdp_header_data(sdp_offer) do
-    String.split(sdp_offer, @line_ending)
-    |> drop_while(&(!String.starts_with?(&1, "m=")))
-    |> Enum.join(@line_ending)
-  end
-
   defp encoding_to_atom(encoding_name) do
     case encoding_name do
       "opus" -> :OPUS
@@ -266,29 +248,4 @@ defmodule Membrane.WebRTC.SDP do
 
   @spec filter_sdp_media(ExSDP.t(), any) :: [Media.t()]
   def filter_sdp_media(sdp, filter_function), do: Enum.filter(sdp.media, &filter_function.(&1))
-
-  @spec get_type_and_ssrc(Media.t()) :: [type: any, ssrc: any]
-  def get_type_and_ssrc(sdp_media) do
-    media_type = sdp_media.type
-    ssrc = Enum.uniq(for %SSRC{} = ssrc <- sdp_media.attributes, do: ssrc.id)
-    [type: media_type, ssrc: ssrc]
-  end
-
-  @spec add_ssrc_to_media_from_tracks(Media.t() | [Media.t()], any, any, [any]) :: any
-  def add_ssrc_to_media_from_tracks([media | medias], audios, videos, acc) do
-    case media.type do
-      :audio ->
-        [audio | audios] = audios
-        media = add_ssrc(media, audio)
-        add_ssrc_to_media_from_tracks(medias, audios, videos, acc ++ [media])
-
-      :video ->
-        [video | videos] = videos
-        media = add_ssrc(media, video)
-        add_ssrc_to_media_from_tracks(medias, audios, videos, acc ++ [media])
-    end
-  end
-
-  @spec add_ssrc_to_media_from_tracks([], any, any, [any]) :: any
-  def add_ssrc_to_media_from_tracks([], _audio, _video, acc), do: acc
 end
