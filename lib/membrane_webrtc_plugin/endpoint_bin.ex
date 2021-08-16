@@ -126,6 +126,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         default: true,
         description: "Enable or disable track"
       ],
+      packet_filters: [
+        spec: [Membrane.RTP.SessionBin.packet_filter_t()],
+        default: [],
+        description: "List of packet filters that will be applied to the SessionBin's output pad"
+      ],
       extensions: [
         spec: [Membrane.RTP.SessionBin.extension_t()],
         default: [],
@@ -221,7 +226,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
 
-    %{track_enabled: track_enabled, extensions: extensions} = ctx.pads[pad].options
+    %{track_enabled: track_enabled, extensions: extensions, packet_filters: packet_filters} =
+      ctx.pads[pad].options
 
     spec = %ParentSpec{
       children: %{
@@ -229,7 +235,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       },
       links: [
         link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc), options: [encoding: encoding, extensions: extensions])
+        |> via_out(Pad.ref(:output, ssrc),
+          options: [encoding: encoding, packet_filters: packet_filters, extensions: extensions]
+        )
         |> to({:track_filter, track_id})
         |> via_out(:output)
         |> to_bin_output(pad)
