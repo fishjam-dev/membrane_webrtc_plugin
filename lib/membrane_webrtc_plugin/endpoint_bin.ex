@@ -127,7 +127,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         description: "Enable or disable track"
       ],
       packet_filters: [
-        spec: [{atom(), struct() | module()}],
+        spec: [Membrane.RTP.SessionBin.packet_filter_t()],
         default: [],
         description: "List of packet filters that will be applied to the SessionBin's output pad"
       ],
