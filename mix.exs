@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.0-alpha.1"
   @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
 
   def project do
@@ -36,7 +36,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
   defp deps do
     [
-      {:membrane_core, "~> 0.7.0", override: true},
+      {:membrane_core, "~> 0.7.0"},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, github: "membraneframework/ex_sdp", branch: "client-send-offer-one-channel"},
@@ -45,8 +45,11 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_h264_ffmpeg_plugin, "~> 0.9.0"},
       {:membrane_rtp_h264_plugin, "~> 0.5.1"},
       {:membrane_dtls_plugin, "~> 0.4.0"},
-      {:membrane_ice_plugin, "~> 0.5.0"},
-      {:membrane_rtp_plugin, "~> 0.7.0-alpha"},
+      {:membrane_ice_plugin,
+       github: "membraneframework/membrane_ice_plugin",
+       branch: "non_concurrent_ice_restart",
+       override: true},
+      {:membrane_rtp_plugin, "~> 0.7.0-alpha.1"},
       {:ex_libsrtp, "~> 0.1.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.1.0"},
       {:membrane_rtp_opus_plugin, "~> 0.3.0"},
