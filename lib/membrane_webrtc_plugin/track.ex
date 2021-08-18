@@ -5,7 +5,7 @@ defmodule Membrane.WebRTC.Track do
   alias Membrane.RTP
 
   @enforce_keys [:type, :stream_id, :id, :name, :timestamp]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true]
+  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true, ready?: false]
 
   @type id :: String.t()
   @type encoding :: :OPUS | :H264 | :VP8
@@ -18,7 +18,8 @@ defmodule Membrane.WebRTC.Track do
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
           timestamp: any(),
-          enabled?: boolean()
+          enabled?: boolean(),
+          ready?: boolean()
         }
 
   @doc """
@@ -31,11 +32,13 @@ defmodule Membrane.WebRTC.Track do
           id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t(),
-          encoding: encoding
+          encoding: encoding,
+          ready?: boolean()
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
     name = Keyword.get(opts, :name, "#{id}-#{type}-#{stream_id}")
+    ready = Keyword.get(opts, :ready?, true)
 
     %__MODULE__{
       type: type,
@@ -44,7 +47,8 @@ defmodule Membrane.WebRTC.Track do
       name: name,
       ssrc: Keyword.get(opts, :ssrc),
       encoding: Keyword.get(opts, :encoding),
-      timestamp: System.monotonic_time()
+      timestamp: System.monotonic_time(),
+      ready?: ready
     }
   end
 

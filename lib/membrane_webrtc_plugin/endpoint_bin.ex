@@ -16,6 +16,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias Membrane.WebRTC.{SDP, Track}
+  require Membrane.Logger
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -145,7 +146,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         port_range: opts.port_range,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
-        handshake_opts: opts.handshake_opts
+        handshake_opts: opts.handshake_opts,
+        log_metadata: opts.log_metadata
       },
       rtp: %Membrane.RTP.SessionBin{secure?: true},
       ice_funnel: Membrane.Funnel
@@ -185,7 +187,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
         track_id_to_mapping: %{},
-        ice: %{}
+        ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -251,7 +253,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       links: [
         link(:rtp)
         |> via_out(Pad.ref(:output, ssrc),
-          options: [encoding: encoding, extensions: extensions, clock_rate: clock_rate]
+          options: [
+            encoding: encoding,
+            packet_filters: packet_filters,
+            extensions: extensions,
+            clock_rate: clock_rate
+          ]
         )
         |> to({:track_filter, track_id})
         |> via_out(:output)
@@ -281,11 +288,13 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
+    Membrane.Logger.info("Local credentials")
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
-    state = %{state | ice: %{ufrag: ice_ufrag, pwd: ice_pwd}}
+    state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd, restarting?: true}}
 
-    tracks_types = Map.values(state.outbound_tracks) |> Enum.map(& &1.type)
+    tracks_types =
+      Map.values(state.outbound_tracks) |> Enum.filter(& &1.ready?) |> Enum.map(& &1.type)
 
     actions = [notify: {:signal, {:server_tracks, tracks_types}}]
 
@@ -306,6 +315,45 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_notification({:vad, _val} = msg, _from, _ctx, state) do
     {{:ok, notify: msg}, state}
+  end
+
+  @impl true
+  def handle_notification(:ice_failed, _from, _ctx, state) do
+    state = %{state | ice: %{state.ice | restarting?: false}}
+    {action, state} = check_ice_status(state, true)
+    {{:ok, action}, state}
+  end
+
+  @impl true
+  def handle_notification(:ice_ready, _from, _ctx, state) do
+    Membrane.Logger.info("Ice ready")
+    outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(& &1.ready?)
+
+    get_encoding = fn track_id -> Map.get(state.outbound_tracks, track_id).encoding end
+
+    outbound_tracks_id_to_link =
+      outbound_tracks
+      |> Enum.map(& &1.id)
+      |> Enum.filter(&(&1 not in state.outbound_tracks_id_linked))
+
+    tracks_id_to_link_with_encoding =
+      outbound_tracks_id_to_link
+      |> Enum.map(&{&1, get_encoding.(&1)})
+
+    negotiations = [notify: {:negotiation_done, tracks_id_to_link_with_encoding}]
+
+    state = %{
+      state
+      | outbound_tracks_id_linked: state.outbound_tracks_id_linked ++ outbound_tracks_id_to_link
+    }
+
+    state = %{state | ice: %{state.ice | restarting?: false}}
+
+    {restart_action, state} = check_ice_status(state)
+
+    actions = negotiations ++ restart_action
+
+    {{:ok, actions}, state}
   end
 
   @impl true
@@ -371,8 +419,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     outbound_mappings = mid_to_mapping |> Enum.filter(&(&1.mid not in inbound_mids))
 
-    outbound_tracks = Map.values(outbound_tracks)
-
     audio_tracks = get_track_id_to_mapping_by_type(outbound_mappings, outbound_tracks, :audio)
 
     video_tracks = get_track_id_to_mapping_by_type(outbound_mappings, outbound_tracks, :video)
@@ -389,20 +435,12 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {inbound_tracks, mappings} = get_inbound_tracks_from_sdp(sdp, state)
 
+    outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(& &1.ready?)
+
     state = %{
       state
-      | track_id_to_mapping: get_track_id_to_mapping(sdp, mappings, state.outbound_tracks)
+      | track_id_to_mapping: get_track_id_to_mapping(sdp, mappings, outbound_tracks)
     }
-
-    get_encoding = fn track_id -> Map.get(state.outbound_tracks, track_id).encoding end
-
-    outbound_tracks_id_to_link =
-      Map.values(state.outbound_tracks)
-      |> Enum.map(& &1.id)
-      |> Enum.filter(&(&1 not in state.outbound_tracks_id_linked))
-      |> Enum.map(&{&1, get_encoding.(&1)})
-
-    negotiations = [notify: {:negotiation_done, outbound_tracks_id_to_link}]
 
     {link_notify, state, inbound_tracks} =
       if new_tracks?(inbound_tracks, state),
@@ -412,7 +450,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     answer =
       SDP.create_answer(
         inbound_tracks: inbound_tracks,
-        outbound_tracks: Map.values(state.outbound_tracks),
+        outbound_tracks: outbound_tracks,
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
@@ -423,7 +461,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       )
 
     {actions, state} =
-      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
+      withl tracks_check: true <- state.inbound_tracks != %{} or outbound_tracks != %{},
             candidate_gathering_check: nil <- state.candidate_gathering_state do
         {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
       else
@@ -435,7 +473,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       [notify: {:mid_to_track, get_mid_to_track_id(state.track_id_to_mapping)}] ++
         [notify: {:signal, {:sdp_answer, to_string(answer)}}] ++
         set_remote_credentials(sdp) ++
-        actions ++ link_notify ++ negotiations
+        actions ++ link_notify
 
     {{:ok, actions}, state}
   end
@@ -447,20 +485,17 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:add_tracks, tracks}, _ctx, state) do
+    tracks = tracks |> Enum.map(fn track -> %{track | ready?: false} end)
     state = add_tracks(state, :outbound_tracks, tracks)
-    {{:ok, forward: {:ice, :restart_stream}}, state}
-  end
-
-  @impl true
-  def handle_other({:linked_tracks, tracks}, _ctx, state) do
-    state = %{state | outbound_tracks_id_linked: state.outbound_tracks_id_linked ++ tracks}
-    {:ok, state}
+    {action, state} = check_ice_status(state, true)
+    {{:ok, action}, state}
   end
 
   @impl true
   def handle_other({:remove_tracks, tracks_ids}, _ctx, state) do
-    state = Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
-    {{:ok, forward: {:ice, :restart_stream}}, state}
+    Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
+    {action, state} = check_ice_status(state, true)
+    {{:ok, action}, state}
   end
 
   @impl true
@@ -471,6 +506,27 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_other({:disable_track, track_id}, _ctx, state) do
     {{:ok, forward: {{:track_filter, track_id}, :disable_track}}, state}
+  end
+
+  defp check_ice_status(state, set_waiting_restart \\ false) do
+    state =
+      if set_waiting_restart,
+        do: %{state | ice: %{state.ice | waiting_restart?: true}},
+        else: state
+
+    if not state.ice.restarting? and state.ice.waiting_restart? do
+      state = %{state | ice: %{state.ice | restarting?: true, waiting_restart?: false}}
+
+      outbound_tracks =
+        Map.values(state.outbound_tracks)
+        |> Map.new(fn track -> {track.id, %{track | ready?: true}} end)
+
+      state = %{state | outbound_tracks: outbound_tracks}
+
+      {[forward: {:ice, :restart_stream}], state}
+    else
+      {[], state}
+    end
   end
 
   defp add_tracks(state, direction, tracks) do
