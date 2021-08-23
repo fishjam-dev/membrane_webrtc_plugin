@@ -244,8 +244,9 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  @spec get_mid_to_mappings(any) :: any
-  def get_mid_to_mappings(sdp), do: Enum.map(sdp.media, &get_mid_type_mappings_from_sdp_media(&1))
+  @spec get_mappings_with_mids(any) :: any
+  def get_mappings_with_mids(sdp),
+    do: Enum.map(sdp.media, &get_mid_type_mappings_from_sdp_media(&1))
 
   @spec get_proper_mapping_for_track(
           any,
