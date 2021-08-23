@@ -373,14 +373,16 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     mappings = Enum.map(tracks_mappings, & &1.mapping)
 
-    old_inbound_tracks_id = Map.values(state.inbound_tracks) |> Enum.map(& &1.id)
+    old_inbound_tracks = Map.values(state.inbound_tracks)
 
-    mappings =
-      if new_tracks?(inbound_tracks, state),
-        do: mappings,
-        else: Enum.map(old_inbound_tracks_id, &Map.get(state.track_id_to_mapping, &1))
+    old_inbound_tracks_mappings =
+      old_inbound_tracks
+      |> Enum.map(& &1.id)
+      |> Enum.map(&Map.get(state.track_id_to_mapping, &1))
 
-    {inbound_tracks, mappings}
+    if new_tracks?(inbound_tracks, state),
+      do: {inbound_tracks, mappings},
+      else: {old_inbound_tracks, old_inbound_tracks_mappings}
   end
 
   defp new_tracks?(inbound_tracks, state) do
@@ -409,21 +411,30 @@ defmodule Membrane.WebRTC.EndpointBin do
     end)
   end
 
-  defp get_track_id_to_mapping(sdp, inbound_mappings, outbound_tracks) do
+  defp get_track_id_to_mapping(sdp, inbound_mappings, outbound_tracks, old_mappings) do
     inbound_track_id_to_mapping =
       Map.new(inbound_mappings, fn mapping -> {mapping.track_id, mapping} end)
 
     inbound_mids = Enum.map(inbound_mappings, & &1.mid)
 
-    mid_to_mapping = SDP.get_mid_to_mappings(sdp)
+    outbound_mids = Map.values(old_mappings) |> Enum.map(& &1.mid)
 
-    outbound_mappings = mid_to_mapping |> Enum.filter(&(&1.mid not in inbound_mids))
+    old_mids = inbound_mids ++ outbound_mids
 
-    audio_tracks = get_track_id_to_mapping_by_type(outbound_mappings, outbound_tracks, :audio)
+    mappings = SDP.get_mappings_with_mids(sdp)
 
-    video_tracks = get_track_id_to_mapping_by_type(outbound_mappings, outbound_tracks, :video)
+    new_outbound_mappings = mappings |> Enum.filter(&(&1.mid not in old_mids))
 
-    inbound_track_id_to_mapping |> Map.merge(audio_tracks) |> Map.merge(video_tracks)
+    outbound_tracks = outbound_tracks |> Enum.filter(&(not Map.has_key?(old_mappings, &1.id)))
+
+    audio_tracks = get_track_id_to_mapping_by_type(new_outbound_mappings, outbound_tracks, :audio)
+
+    video_tracks = get_track_id_to_mapping_by_type(new_outbound_mappings, outbound_tracks, :video)
+
+    inbound_track_id_to_mapping
+    |> Map.merge(audio_tracks)
+    |> Map.merge(video_tracks)
+    |> Map.merge(old_mappings)
   end
 
   defp get_mid_to_track_id(track_id_to_mappings),
@@ -439,7 +450,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state = %{
       state
-      | track_id_to_mapping: get_track_id_to_mapping(sdp, mappings, outbound_tracks)
+      | track_id_to_mapping:
+          get_track_id_to_mapping(sdp, mappings, outbound_tracks, state.track_id_to_mapping)
     }
 
     {link_notify, state, inbound_tracks} =
