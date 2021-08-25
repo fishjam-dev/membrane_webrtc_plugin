@@ -16,7 +16,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias Membrane.WebRTC.{SDP, Track}
-  require Membrane.Logger
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -288,7 +287,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
-    Membrane.Logger.info("Local credentials")
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
     state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd, restarting?: true}}
@@ -325,8 +323,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification(:ice_ready, _from, _ctx, state) do
-    Membrane.Logger.info("Ice ready")
+  def handle_notification(:ice_ready, _from, _ctx, state) when state.ice.restarting? do
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(& &1.ready?)
 
     get_encoding = fn track_id -> Map.get(state.outbound_tracks, track_id).encoding end
@@ -354,6 +351,12 @@ defmodule Membrane.WebRTC.EndpointBin do
     actions = negotiations ++ restart_action
 
     {{:ok, actions}, state}
+  end
+
+  @impl true
+  def handle_notification(:ice_ready, _from, _ctx, state) when not state.ice.restarting? do
+    {action, state} = check_ice_status(state, true)
+    {{:ok, action}, state}
   end
 
   @impl true
