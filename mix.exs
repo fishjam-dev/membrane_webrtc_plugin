@@ -8,7 +8,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
     [
       app: :membrane_webrtc_plugin,
       version: @version,
-      elixir: "~> 1.10",
+      elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),

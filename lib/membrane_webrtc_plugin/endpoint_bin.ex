@@ -15,7 +15,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Bunch
 
   alias ExSDP.{Attribute.SSRC, Media}
-  alias Membrane.WebRTC.{SDP, Track}
+  alias Membrane.WebRTC.{SDP, Track, TrackFilter}
 
   require Membrane.Logger
 
@@ -106,13 +106,18 @@ defmodule Membrane.WebRTC.EndpointBin do
     availability: :on_request,
     options: [
       encoding: [
-        spec: :OPUS | :H264,
+        spec: :OPUS | :H264 | :VP8,
         description: "Track encoding"
       ],
       track_enabled: [
         spec: boolean(),
         default: true,
         description: "Enable or disable track"
+      ],
+      use_payloader?: [
+        spec: boolean(),
+        default: true,
+        description: "Defines if incoming stream should be payloaded based on given encoding"
       ]
     ]
 
@@ -135,6 +140,20 @@ defmodule Membrane.WebRTC.EndpointBin do
         spec: [Membrane.RTP.SessionBin.extension_t()],
         default: [],
         description: "List of tuples representing rtp extensions"
+      ],
+      use_depayloader?: [
+        spec: boolean(),
+        default: true,
+        description: "Use depayloader for outgoing stream"
+      ],
+      use_jitter_buffer?: [
+        spec: boolean(),
+        default: true,
+        description: """
+        Use jitter buffer before producing outgoing stream.
+
+        Usually should go together with depayloader.
+        """
       ]
     ]
 
@@ -199,21 +218,28 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    %{encoding: encoding} = ctx.options
+    %{encoding: encoding, use_payloader?: use_payloader?} = ctx.options
     %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
     %{track_enabled: track_enabled} = ctx.pads[pad].options
 
     encoding_specific_links =
       case encoding do
-        :H264 -> &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
-        _other -> & &1
+        :H264 ->
+          if use_payloader? do
+            &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
+          else
+            & &1
+          end
+
+        _other ->
+          & &1
       end
 
     links = [
       link_bin_input(pad)
-      |> pipe_fun(encoding_specific_links)
-      |> to({:track_filter, track_id}, %Membrane.WebRTC.TrackFilter{enabled: track_enabled})
-      |> via_in(Pad.ref(:input, ssrc))
+      |> then(encoding_specific_links)
+      |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
+      |> via_in(Pad.ref(:input, ssrc), options: [use_payloader?: use_payloader?])
       |> to(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: [encoding: encoding])
       |> to(:ice_funnel)
@@ -226,20 +252,19 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding} = Map.fetch!(state.inbound_tracks, track_id)
 
-    %{track_enabled: track_enabled, extensions: extensions, packet_filters: packet_filters} =
+    output_pad_options =
       ctx.pads[pad].options
+      |> Map.take([:extensions, :packet_filters, :use_depayloader?, :use_jitter_buffer?])
+      |> Map.put(:encoding, encoding)
+      |> Map.to_list()
 
     spec = %ParentSpec{
-      children: %{
-        {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
-      },
       links: [
         link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc),
-          options: [encoding: encoding, packet_filters: packet_filters, extensions: extensions]
-        )
-        |> to({:track_filter, track_id})
-        |> via_out(:output)
+        |> via_out(Pad.ref(:output, ssrc), options: output_pad_options)
+        |> to({:track_filter, track_id}, %TrackFilter{
+          enabled: ctx.pads[pad].options.track_enabled
+        })
         |> to_bin_output(pad)
       ]
     }
@@ -396,7 +421,4 @@ defmodule Membrane.WebRTC.EndpointBin do
         [forward: {:ice, {:set_remote_credentials, remote_credentials}}]
     end
   end
-
-  # TODO: remove once updated to Elixir 1.12
-  defp pipe_fun(term, fun), do: fun.(term)
 end
