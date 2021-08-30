@@ -14,6 +14,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Membrane.Bin
   use Bunch
 
+  require Membrane.Logger
+
   alias ExSDP.Media
   alias Membrane.WebRTC.{SDP, Track}
 
@@ -500,7 +502,13 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:add_tracks, tracks}, _ctx, state) do
-    tracks = tracks |> Enum.map(fn track -> %{track | ready?: false} end)
+    outbound_tracks = state.outbound_tracks
+
+    change_track_readiness = fn track ->
+      if Map.has_key?(outbound_tracks, track.id), do: track, else: %{track | ready?: false}
+    end
+
+    tracks = tracks |> Enum.map(fn track -> change_track_readiness.(track) end)
     state = add_tracks(state, :outbound_tracks, tracks)
     {action, state} = check_ice_status(state, true)
     {{:ok, action}, state}
@@ -508,7 +516,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:remove_tracks, tracks_ids}, _ctx, state) do
-    Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
     {action, state} = check_ice_status(state, true)
     {{:ok, action}, state}
   end
