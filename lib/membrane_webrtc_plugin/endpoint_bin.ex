@@ -208,14 +208,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     mapping = Map.get(state.track_id_to_mapping, track_id)
 
-    options =
-      if mapping !== nil,
-        do: [
-          encoding: encoding,
-          clock_rate: mapping.clock_rate,
-          payload_type: mapping.payload_type
-        ],
-        else: [encoding: encoding]
+    options = [
+      encoding: encoding,
+      clock_rate: mapping.clock_rate,
+      payload_type: mapping.payload_type
+    ]
 
     encoding_specific_links =
       case encoding do
@@ -269,15 +266,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:new_rtp_stream, ssrc, pt}, _from, _ctx, state) do
-    %{encoding_name: encoding} =
-      Enum.find(Map.values(state.track_id_to_mapping), &(&1.payload_type === pt))
-
+  def handle_notification({:new_rtp_stream, ssrc, _pt}, _from, _ctx, state) do
     track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
     track = Map.fetch!(state.inbound_tracks, track_id)
-    track = %Track{track | ssrc: ssrc, encoding: encoding}
+    track = %Track{track | ssrc: ssrc}
     state = put_in(state, [:inbound_tracks, track.id], track)
-    {{:ok, notify: {:new_track, track.id, encoding}}, state}
+    {{:ok, notify: {:new_track, track.id, track.encoding}}, state}
   end
 
   @impl true
@@ -380,8 +374,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     old_inbound_tracks_mappings =
       old_inbound_tracks
-      |> Enum.map(& &1.id)
-      |> Enum.map(&Map.get(state.track_id_to_mapping, &1))
+      |> Enum.map(&Map.get(state.track_id_to_mapping, &1.id))
 
     if new_tracks?(inbound_tracks, state),
       do: {inbound_tracks, mappings},
@@ -393,7 +386,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     Enum.any?(inbound_tracks, &(&1.ssrc not in known_ssrcs))
   end
 
-  defp new_tracks_change(tracks, state) do
+  defp change_inbound_tracks(tracks, state) do
     track_id_to_track = Map.new(tracks, &{&1.id, &1})
     state = %{state | inbound_tracks: track_id_to_track}
 
@@ -459,7 +452,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {link_notify, state, inbound_tracks} =
       if new_tracks?(inbound_tracks, state),
-        do: new_tracks_change(inbound_tracks, state),
+        do: change_inbound_tracks(inbound_tracks, state),
         else: {[], state, Map.values(state.inbound_tracks)}
 
     answer =
@@ -500,7 +493,13 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:add_tracks, tracks}, _ctx, state) do
-    tracks = tracks |> Enum.map(fn track -> %{track | ready?: false} end)
+    outbound_tracks = state.outbound_tracks
+
+    change_track_readiness = fn track ->
+      if Map.has_key?(outbound_tracks, track.id), do: track, else: %{track | ready?: false}
+    end
+
+    tracks = tracks |> Enum.map(fn track -> change_track_readiness.(track) end)
     state = add_tracks(state, :outbound_tracks, tracks)
     {action, state} = check_ice_status(state, true)
     {{:ok, action}, state}
@@ -508,7 +507,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:remove_tracks, tracks_ids}, _ctx, state) do
-    Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
+    state = Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
     {action, state} = check_ice_status(state, true)
     {{:ok, action}, state}
   end
@@ -523,9 +522,9 @@ defmodule Membrane.WebRTC.EndpointBin do
     {{:ok, forward: {{:track_filter, track_id}, :disable_track}}, state}
   end
 
-  defp check_ice_status(state, set_waiting_restart \\ false) do
+  defp check_ice_status(state, set_waiting_restart? \\ false) do
     state =
-      if set_waiting_restart,
+      if set_waiting_restart?,
         do: %{state | ice: %{state.ice | waiting_restart?: true}},
         else: state
 

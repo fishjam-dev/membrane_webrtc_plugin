@@ -10,7 +10,7 @@ defmodule Membrane.WebRTC.SDP do
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
   @doc """
-  Creates Unified Plan SDP offer.
+  Creates Unified Plan SDP answer.
 
   The mandatory options are:
   - ice_ufrag - ICE username fragment
@@ -18,6 +18,7 @@ defmodule Membrane.WebRTC.SDP do
   - fingerprint - DTLS fingerprint
   - inbound_tracks - list of inbound tracks
   - outbound_tracks - list of outbound tracks
+  - mappings - dictionary where keys are tracks_id and value are mapping got from SDP offer.
 
   Additionally accepts audio_codecs and video_codecs options,
   that should contain lists of SDP attributes for desired codecs,
@@ -26,59 +27,7 @@ defmodule Membrane.WebRTC.SDP do
       video_codecs: [
         %RTPMapping{payload_type: 98, encoding: "VP9", clock_rate: 90_000}
       ]
-
-  By default both lists are empty and default audio and video codecs get appended including
-  OPUS for audio, H264 and VP8 for video.
-
-  To disable all or enable just one specific codec type use `use_default_codecs` option.
-  To disable default codecs pass an empty list. To enable only either audio or video, pass a list
-  with a single atom `[:audio]` or `[:video]`.
   """
-  @spec create_offer(
-          ice_ufrag: String.t(),
-          ice_pwd: String.t(),
-          fingerprint: fingerprint(),
-          audio_codecs: [ExSDP.Attribute.t()],
-          video_codecs: [ExSDP.Attribute.t()],
-          inbound_tracks: [Track.t()],
-          outbound_tracks: [Track.t()],
-          use_default_codecs: [:audio | :video],
-          mappings: %{}
-        ) :: ExSDP.t()
-  def create_offer(opts) do
-    mappings = Keyword.get(opts, :mappings, %{})
-
-    config = %{
-      ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
-      ice_pwd: Keyword.fetch!(opts, :ice_pwd),
-      fingerprint: Keyword.fetch!(opts, :fingerprint),
-      codecs: %{
-        audio: Keyword.get(opts, :audio_codecs, []),
-        video: Keyword.get(opts, :video_codecs, [])
-      },
-      fmt_mappings: mappings
-    }
-
-    # TODO verify if sorting tracks this way allows for adding inbound tracks in updated offer
-    inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> Enum.sort_by(& &1.timestamp)
-    outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
-
-    mids =
-      Enum.map(inbound_tracks ++ outbound_tracks, &Map.get(mappings, &1.id))
-      |> Enum.filter(&(&1 !== nil))
-      |> Enum.map(& &1.mid)
-
-    attributes = [
-      %Group{semantics: "BUNDLE", mids: mids},
-      "extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on"
-    ]
-
-    %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
-    |> ExSDP.add_attributes(attributes)
-    |> add_tracks(inbound_tracks, :recvonly, config)
-    |> add_tracks(outbound_tracks, :sendonly, config)
-  end
-
   @spec create_answer(
           ice_ufrag: String.t(),
           ice_pwd: String.t(),
@@ -180,7 +129,7 @@ defmodule Membrane.WebRTC.SDP do
       {:ice_options, "trickle"},
       {:fingerprint, config.fingerprint},
       {:setup, if(direction == :recvonly, do: :passive, else: :active)},
-      {:mid, if(track_data !== %{}, do: track_data.mid, else: "")},
+      {:mid, track_data.mid},
       MSID.new(track.stream_id),
       :rtcp_mux
     ])
@@ -249,7 +198,7 @@ defmodule Membrane.WebRTC.SDP do
     do: Enum.map(sdp.media, &get_mid_type_mappings_from_sdp_media(&1))
 
   @spec get_proper_mapping_for_track(
-          any,
+          atom | %{:encoding => any, optional(any) => any},
           atom | %{:mappings => any, :media_type => any, :mid => any, optional(any) => any}
         ) :: %{
           clock_rate: any,
