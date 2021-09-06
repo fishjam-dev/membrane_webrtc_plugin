@@ -2,10 +2,10 @@ defmodule Membrane.WebRTC.Track do
   @moduledoc """
   Module representing a WebRTC track.
   """
-  alias Membrane.RTP
+  alias ExSDP.Attribute.RTPMapping
 
-  @enforce_keys [:type, :stream_id, :id, :name, :timestamp]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true, ready?: false]
+  @enforce_keys [:type, :stream_id, :id, :name, :timestamp, :mid, :rtp_mapping, :status]
+  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
 
   @type id :: String.t()
   @type encoding :: :OPUS | :H264 | :VP8
@@ -18,8 +18,9 @@ defmodule Membrane.WebRTC.Track do
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
           timestamp: any(),
-          enabled?: boolean(),
-          ready?: boolean()
+          status: :none | :ready | :linked | :disabled,
+          mid: non_neg_integer(),
+          rtp_mapping: %{}
         }
 
   @doc """
@@ -33,12 +34,13 @@ defmodule Membrane.WebRTC.Track do
           name: String.t(),
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
-          ready?: boolean()
+          mid: non_neg_integer(),
+          rtp_mapping: RTPMapping,
+          status: :none | :ready | :linked | :disabled
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
     name = Keyword.get(opts, :name, "#{id}-#{type}-#{stream_id}")
-    ready = Keyword.get(opts, :ready?, true)
 
     %__MODULE__{
       type: type,
@@ -48,7 +50,9 @@ defmodule Membrane.WebRTC.Track do
       ssrc: Keyword.get(opts, :ssrc),
       encoding: Keyword.get(opts, :encoding),
       timestamp: System.monotonic_time(),
-      ready?: ready
+      rtp_mapping: Keyword.get(opts, :rtp_mapping),
+      mid: Keyword.get(opts, :mid, nil),
+      status: Keyword.get(opts, :status, :ready)
     }
   end
 
