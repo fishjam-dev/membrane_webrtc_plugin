@@ -20,7 +20,7 @@ defmodule Membrane.WebRTC.Track do
           timestamp: any(),
           status: :none | :ready | :linked | :disabled,
           mid: non_neg_integer(),
-          rtp_mapping: %{}
+          rtp_mapping: RTPMapping
         }
 
   @doc """

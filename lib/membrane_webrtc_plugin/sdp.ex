@@ -62,8 +62,7 @@ defmodule Membrane.WebRTC.SDP do
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
     |> ExSDP.add_attributes(attributes)
-    |> add_tracks(inbound_tracks, :recvonly, config)
-    |> add_tracks(outbound_tracks, :sendonly, config)
+    |> add_tracks(inbound_tracks, outbound_tracks, config)
   end
 
   defp encoding_name_to_string(encoding_name) do
@@ -75,8 +74,17 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  defp add_tracks(sdp, tracks, direction, config) do
-    ExSDP.add_media(sdp, Enum.map(tracks, &create_sdp_media(&1, direction, config)))
+  defp add_tracks(sdp, inbound_tracks, outbound_tracks, config) do
+    inbound_tracks = Enum.map(inbound_tracks, &{&1, create_sdp_media(&1, :recvonly, config)})
+
+    outbound_tracks = Enum.map(outbound_tracks, &{&1, create_sdp_media(&1, :sendonly, config)})
+
+    tracks =
+      (inbound_tracks ++ outbound_tracks)
+      |> Enum.sort_by(fn {track, _media} -> Integer.parse(track.mid) end)
+      |> Enum.map(fn {_track, media} -> media end)
+
+    ExSDP.add_media(sdp, tracks)
   end
 
   defp add_standard_extensions(media) do

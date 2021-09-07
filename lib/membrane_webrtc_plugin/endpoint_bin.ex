@@ -344,7 +344,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification(:ice_ready, _from, _ctx, state) when not state.ice.restarting? do
+  def handle_notification(:connection_ready, _from, _ctx, state) when not state.ice.restarting? do
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
   end
