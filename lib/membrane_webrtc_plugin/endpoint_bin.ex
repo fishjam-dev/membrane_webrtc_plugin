@@ -287,9 +287,10 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Enum.filter(&(&1.status != :none))
       |> Enum.map(& &1.type)
 
-    actions = [notify: {:signal, {:server_tracks, tracks_types}}]
+    actions = [notify: {:signal, {:offer_data, tracks_types}}]
 
     {{:ok, actions}, state}
+    # {:ok, state}
   end
 
   @impl true
@@ -412,8 +413,8 @@ defmodule Membrane.WebRTC.EndpointBin do
     {Map.values(updated_outbound_tracks), state}
   end
 
-  defp get_mid_to_track_id(tracks),
-    do: Map.new(tracks, fn track -> {track.mid, track.id} end)
+  defp get_track_id_to_mid(tracks),
+    do: Map.new(tracks, fn track -> {track.id, track.mid} end)
 
   @impl true
   def handle_other({:signal, {:sdp_offer, sdp}}, _ctx, state) do
@@ -452,8 +453,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     actions =
-      [notify: {:mid_to_track, get_mid_to_track_id(inbound_tracks ++ outbound_tracks)}] ++
-        [notify: {:signal, {:sdp_answer, to_string(answer)}}] ++
+      [
+        notify:
+          {:signal,
+           {:sdp_answer, to_string(answer),
+            get_track_id_to_mid(inbound_tracks ++ outbound_tracks)}}
+      ] ++
         set_remote_credentials(sdp) ++
         actions ++ link_notify
 
