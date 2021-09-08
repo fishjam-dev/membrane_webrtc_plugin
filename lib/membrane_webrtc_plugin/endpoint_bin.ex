@@ -391,6 +391,9 @@ defmodule Membrane.WebRTC.EndpointBin do
     {actions, state, tracks}
   end
 
+  # As the mid of outbound_track can change between SDP offers and different browser can have
+  # different payload_type for the same codec, so after receiving each sdp offer we update each outbound_track rtp_mapping and mid
+  # based on data we receive in sdp offer
   defp update_outbound_tracks_by_type(medias, tracks, type) do
     medias = Enum.filter(medias, &(&1.media_type === type))
     tracks = Enum.filter(tracks, &(&1.type === type))
@@ -402,7 +405,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp update_outbound_tracks_mapping(sdp, outbound_tracks, state) do
-    outbound_medias = SDP.get_medias_mappings(sdp)
+    outbound_medias = SDP.get_recvonly_medias_mappings(sdp)
 
     audio_tracks = update_outbound_tracks_by_type(outbound_medias, outbound_tracks, :audio)
 

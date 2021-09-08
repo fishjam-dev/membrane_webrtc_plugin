@@ -178,8 +178,8 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  @spec get_medias_mappings(any) :: any
-  def get_medias_mappings(sdp) do
+  @spec get_recvonly_medias_mappings(any) :: any
+  def get_recvonly_medias_mappings(sdp) do
     recv_only_sdp_media = filter_sdp_media(sdp, &(:recvonly in &1.attributes))
     Enum.map(recv_only_sdp_media, &get_mid_type_mappings_from_sdp_media(&1))
   end
