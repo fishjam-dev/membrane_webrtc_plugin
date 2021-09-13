@@ -395,8 +395,13 @@ defmodule Membrane.WebRTC.EndpointBin do
   # different payload_type for the same codec, so after receiving each sdp offer we update each outbound_track rtp_mapping and mid
   # based on data we receive in sdp offer
   defp update_outbound_tracks_by_type(medias, tracks, type) do
-    medias = Enum.filter(medias, &(&1.media_type === type))
-    tracks = Enum.filter(tracks, &(&1.type === type))
+    sort_mid = &if &1.mid != nil, do: Integer.parse(&1.mid), else: nil
+
+    medias =
+      Enum.filter(medias, &(&1.media_type === type))
+      |> Enum.sort_by(sort_mid)
+
+    tracks = Enum.filter(tracks, &(&1.type === type)) |> Enum.sort_by(sort_mid)
 
     Enum.zip(medias, tracks)
     |> Map.new(fn {media, track} ->

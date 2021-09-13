@@ -176,8 +176,8 @@ defmodule Membrane.WebRTC.SDP do
     encoding_string = encoding_name_to_string(track.encoding)
 
     mapping =
-      Enum.find(mappings.rtp_fmtp_mappings, fn {rtp, fmtp} ->
-        rtp.encoding === encoding_string and track.fmtp == fmtp
+      Enum.find(mappings.rtp_fmtp_mappings, fn {rtp, _fmtp} ->
+        rtp.encoding === encoding_string
       end)
 
     if mapping === nil do
