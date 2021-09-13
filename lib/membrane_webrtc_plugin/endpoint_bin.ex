@@ -15,6 +15,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Bunch
 
   alias ExSDP.Media
+  alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.WebRTC.{SDP, Track}
 
   @type signal_message ::
@@ -85,11 +86,10 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Audio codecs that will be passed for SDP offer generation"
               ],
-              use_default_codecs: [
-                spec: [:audio | :video],
-                default: [:audio, :video],
-                description:
-                  "Defines whether to use default codecs or not. Default codecs are those required by WebRTC standard - OPUS, VP8 and H264"
+              filter_codecs: [
+                spec: ({RTPMapping, FMTP} -> boolean()),
+                default: &SDP.filter_mappings(&1),
+                description: "Defines function which will filter SDP m-line by codecs"
               ],
               log_metadata: [
                 spec: :list,
@@ -179,11 +179,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         outbound_tracks: %{},
         audio_codecs: opts.audio_codecs,
         video_codecs: opts.video_codecs,
-        use_default_codecs: opts.use_default_codecs,
         candidates: [],
         candidate_gathering_state: nil,
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
+        filter_codecs: opts.filter_codecs,
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -366,7 +366,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp get_inbound_tracks_from_sdp(sdp, state) do
-    inbound_tracks = SDP.get_tracks(sdp)
+    inbound_tracks = SDP.get_tracks(sdp, state.filter_codecs)
 
     old_inbound_tracks = Map.values(state.inbound_tracks)
 
@@ -405,7 +405,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp update_outbound_tracks_mapping(sdp, outbound_tracks, state) do
-    outbound_medias = SDP.get_recvonly_medias_mappings(sdp)
+    outbound_medias = SDP.get_recvonly_medias_mappings(sdp, state.filter_codecs)
 
     audio_tracks = update_outbound_tracks_by_type(outbound_medias, outbound_tracks, :audio)
 

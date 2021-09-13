@@ -2,9 +2,9 @@ defmodule Membrane.WebRTC.Track do
   @moduledoc """
   Module representing a WebRTC track.
   """
-  alias ExSDP.Attribute.RTPMapping
+  alias ExSDP.Attribute.{RTPMapping, FMTP}
 
-  @enforce_keys [:type, :stream_id, :id, :name, :timestamp, :mid, :rtp_mapping, :status]
+  @enforce_keys [:type, :stream_id, :id, :name, :timestamp, :mid, :rtp_mapping, :fmtp, :status]
   defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
 
   @type id :: String.t()
@@ -20,7 +20,8 @@ defmodule Membrane.WebRTC.Track do
           timestamp: any(),
           status: :none | :ready | :linked | :disabled,
           mid: non_neg_integer(),
-          rtp_mapping: RTPMapping
+          rtp_mapping: RTPMapping,
+          fmtp: FMTP
         }
 
   @doc """
@@ -52,7 +53,8 @@ defmodule Membrane.WebRTC.Track do
       timestamp: System.monotonic_time(),
       rtp_mapping: Keyword.get(opts, :rtp_mapping),
       mid: Keyword.get(opts, :mid, nil),
-      status: Keyword.get(opts, :status, :ready)
+      status: Keyword.get(opts, :status, :ready),
+      fmtp: Keyword.get(opts, :fmtp)
     }
   end
 
