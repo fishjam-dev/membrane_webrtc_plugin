@@ -347,10 +347,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification(notification, _from, _ctx, state) do
-    IO.inspect(notification, label: :notification)
-    {:ok, state}
-  end
+  def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
 
   @impl true
   def handle_other({:signal, {:sdp_offer, sdp}}, _ctx, state) do
