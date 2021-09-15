@@ -42,10 +42,6 @@ defmodule Membrane.WebRTC.SDP do
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks) |> Enum.sort_by(& &1.timestamp)
     mids = Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid)
 
-    outbound_tracks =
-      outbound_tracks
-      |> Enum.sort_by(fn track -> Integer.parse(track.mid) end)
-
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
@@ -162,17 +158,12 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  @spec get_recvonly_medias_mappings(any, any) :: any
-  def get_recvonly_medias_mappings(sdp, filter_codecs) do
+  defp get_recvonly_media(sdp, filter_codecs) do
     recv_only_sdp_media = filter_sdp_media(sdp, &(:recvonly in &1.attributes))
     Enum.map(recv_only_sdp_media, &get_mid_type_mappings_from_sdp_media(&1, filter_codecs))
   end
 
-  @spec update_mapping_and_mid_for_track(
-          %{:encoding => any, :mid => any, :rtp_mapping => any, optional(any) => any},
-          atom | %{:mappings => any, :mid => any, optional(any) => any}
-        ) :: %{:encoding => any, :mid => any, :rtp_mapping => any, optional(any) => any}
-  def update_mapping_and_mid_for_track(track, mappings) do
+  defp update_mapping_and_mid_for_track(track, mappings) do
     encoding_string = encoding_name_to_string(track.encoding)
 
     mapping =
@@ -219,17 +210,56 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  @spec get_tracks(ExSDP.t(), any) :: [Track.t()]
-  def get_tracks(sdp, filter_codecs) do
+  @spec get_tracks(ExSDP.t(), any, [Track.t()], [Track.t()]) ::
+          {[Track.t()], [Track.t()], [Track.t()]}
+  def get_tracks(sdp, filter_codecs, outbound_tracks, old_inbound_tracks) do
     send_only_sdp_media = filter_sdp_media(sdp, &(:sendonly in &1.attributes))
 
     stream_id = Track.stream_id()
 
-    Enum.map(send_only_sdp_media, &create_track_from_sdp_media(&1, stream_id, filter_codecs))
+    new_inbound_tracks =
+      Enum.map(send_only_sdp_media, &create_track_from_sdp_media(&1, stream_id, filter_codecs))
+      |> get_new_tracks(old_inbound_tracks)
+
+    recv_only_sdp_media = get_recvonly_media(sdp, filter_codecs)
+    outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media, outbound_tracks)
+
+    {new_inbound_tracks, new_inbound_tracks ++ old_inbound_tracks, outbound_tracks}
   end
 
-  @spec create_track_from_sdp_media(any, any, any) :: Track.t()
-  def create_track_from_sdp_media(sdp_media, stream_id, filter_codecs) do
+  defp get_outbound_tracks_updated(outbound_media, outbound_tracks) do
+    audio_tracks = update_outbound_tracks_by_type(outbound_media, outbound_tracks, :audio)
+
+    video_tracks = update_outbound_tracks_by_type(outbound_media, outbound_tracks, :video)
+
+    updated_outbound_tracks = Map.merge(audio_tracks, video_tracks)
+    Map.values(updated_outbound_tracks)
+  end
+
+  defp get_new_tracks(inbound_tracks, old_inbound_tracks) do
+    known_ssrcs = Enum.map(old_inbound_tracks, fn track -> track.ssrc end)
+    Enum.filter(inbound_tracks, &(&1.ssrc not in known_ssrcs))
+  end
+
+  # As the mid of outbound_track can change between SDP offers and different browser can have
+  # different payload_type for the same codec, so after receiving each sdp offer we update each outbound_track rtp_mapping and mid
+  # based on data we receive in sdp offer
+  defp update_outbound_tracks_by_type(medias, tracks, type) do
+    sort_mid = &if &1.mid != nil, do: Integer.parse(&1.mid), else: nil
+
+    medias =
+      Enum.filter(medias, &(&1.media_type === type))
+      |> Enum.sort_by(sort_mid)
+
+    tracks = Enum.filter(tracks, &(&1.type === type)) |> Enum.sort_by(sort_mid)
+
+    Enum.zip(medias, tracks)
+    |> Map.new(fn {media, track} ->
+      {track.id, update_mapping_and_mid_for_track(track, media)}
+    end)
+  end
+
+  defp create_track_from_sdp_media(sdp_media, stream_id, filter_codecs) do
     media_type = sdp_media.type
 
     ssrc = Media.get_attribute(sdp_media, :ssrc).id

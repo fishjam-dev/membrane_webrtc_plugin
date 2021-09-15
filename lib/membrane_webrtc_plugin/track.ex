@@ -18,7 +18,7 @@ defmodule Membrane.WebRTC.Track do
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
           timestamp: any(),
-          status: :none | :ready | :linked | :disabled,
+          status: :pending | :ready | :linked | :disabled,
           mid: non_neg_integer(),
           rtp_mapping: RTPMapping,
           fmtp: FMTP
@@ -37,7 +37,7 @@ defmodule Membrane.WebRTC.Track do
           encoding: encoding,
           mid: non_neg_integer(),
           rtp_mapping: RTPMapping,
-          status: :none | :ready | :linked | :disabled
+          status: :pending | :ready | :linked | :disabled
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
