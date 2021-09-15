@@ -86,7 +86,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Audio codecs that will be passed for SDP offer generation"
               ],
-              filter_codecs: [
+              codecs_filter: [
                 spec: ({RTPMapping, FMTP} -> boolean()),
                 default: &SDP.filter_mappings(&1),
                 description: "Defines function which will filter SDP m-line by codecs"
@@ -183,7 +183,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidate_gathering_state: nil,
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
-        filter_codecs: opts.filter_codecs,
+        codecs_filter: opts.codecs_filter,
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -404,13 +404,13 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_other({:add_tracks, tracks}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
-    change_track_readiness = fn track ->
-      if Map.has_key?(outbound_tracks, track.id),
-        do: track,
-        else: %{track | status: :pending, mid: nil}
-    end
+    tracks =
+      Enum.map(tracks, fn track ->
+        if Map.has_key?(outbound_tracks, track.id),
+          do: track,
+          else: %{track | status: :pending, mid: nil}
+      end)
 
-    tracks = tracks |> Enum.map(fn track -> change_track_readiness.(track) end)
     state = add_tracks(state, :outbound_tracks, tracks)
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
@@ -467,9 +467,9 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     SDP.get_tracks(
       sdp,
-      state.filter_codecs,
-      outbound_tracks,
-      old_inbound_tracks
+      state.codecs_filter,
+      old_inbound_tracks,
+      outbound_tracks
     )
   end
 
