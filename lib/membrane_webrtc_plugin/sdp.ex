@@ -43,7 +43,7 @@ defmodule Membrane.WebRTC.SDP do
 
     mids =
       Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid)
-      |> Enum.sort_by(&String.to_integer(&1))
+      |> Enum.sort_by(&String.to_integer/1)
 
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
