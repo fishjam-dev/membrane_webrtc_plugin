@@ -401,6 +401,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
+  def handle_other({:signal, :restart_ice}, _ctx, state) do
+    {action, state} = maybe_restart_ice(state, true)
+    {{:ok, action}, state}
+  end
+
+  @impl true
   def handle_other({:add_tracks, tracks}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
