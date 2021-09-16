@@ -40,7 +40,10 @@ defmodule Membrane.WebRTC.SDP do
   def create_answer(opts) do
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks)
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks)
-    mids = Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid) |> Enum.sort()
+
+    mids =
+      Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid)
+      |> Enum.sort_by(&String.to_integer(&1))
 
     config = %{
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
@@ -234,7 +237,7 @@ defmodule Membrane.WebRTC.SDP do
   # different payload_type for the same codec, so after receiving each sdp offer we update each outbound_track rtp_mapping and mid
   # based on data we receive in sdp offer
   defp update_outbound_tracks_by_type(media_data, tracks, type) do
-    sort_mid = &if &1.mid != nil, do: Integer.parse(&1.mid), else: nil
+    sort_mid = &if &1.mid != nil, do: String.to_integer(&1.mid), else: nil
 
     media_data =
       Enum.filter(media_data, &(&1.media_type === type))

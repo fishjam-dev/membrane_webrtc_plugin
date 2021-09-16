@@ -86,8 +86,8 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Audio codecs that will be passed for SDP offer generation"
               ],
-              codecs_filter: [
-                spec: ({RTPMapping, FMTP} -> boolean()),
+              filter_codecs: [
+                spec: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
                 default: &SDP.filter_mappings(&1),
                 description: "Defines function which will filter SDP m-line by codecs"
               ],
@@ -183,7 +183,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidate_gathering_state: nil,
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
-        codecs_filter: opts.codecs_filter,
+        filter_codecs: opts.filter_codecs,
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -467,7 +467,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     SDP.get_tracks(
       sdp,
-      state.codecs_filter,
+      state.filter_codecs,
       old_inbound_tracks,
       outbound_tracks
     )
