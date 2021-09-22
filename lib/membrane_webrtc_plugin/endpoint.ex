@@ -2,6 +2,7 @@ defmodule Membrane.WebRTC.Endpoint do
   @moduledoc """
   Module representing a WebRTC connection.
   """
+  use Bunch.Access
   alias Membrane.WebRTC.Track
 
   @type id() :: any()

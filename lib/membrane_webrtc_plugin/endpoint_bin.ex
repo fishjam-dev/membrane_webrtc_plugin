@@ -96,6 +96,10 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
+              ],
+              endpoint_id: [
+                spec: String.t(),
+                description: "Endpoint id"
               ]
 
   def_input_pad :input,
@@ -175,6 +179,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state =
       %{
+        endpoint_id: opts.endpoint_id,
         inbound_tracks: %{},
         outbound_tracks: %{},
         audio_codecs: opts.audio_codecs,
@@ -386,10 +391,13 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
       end
 
+    mid_to_track_id = Map.new(inbound_tracks ++ outbound_tracks, &{&1.mid, &1.id})
+
     actions =
-      [notify: {:signal, {:sdp_answer, to_string(answer), inbound_tracks ++ outbound_tracks}}] ++
+      link_notify ++
+        [notify: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
-        actions ++ link_notify
+        actions
 
     {{:ok, actions}, state}
   end
@@ -474,7 +482,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       sdp,
       state.filter_codecs,
       old_inbound_tracks,
-      outbound_tracks
+      outbound_tracks,
+      state.endpoint_id
     )
   end
 

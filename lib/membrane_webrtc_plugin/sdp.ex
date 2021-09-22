@@ -127,8 +127,7 @@ defmodule Membrane.WebRTC.SDP do
   defp add_ssrc(media, track),
     do:
       Media.add_attributes(media, [
-        %SSRC{id: track.ssrc, attribute: "cname", value: track.name},
-        %SSRC{id: track.ssrc, attribute: "label", value: track.id}
+        %SSRC{id: track.ssrc, attribute: "cname", value: track.name}
       ])
 
   defp get_payload_types(codecs) do
@@ -154,16 +153,20 @@ defmodule Membrane.WebRTC.SDP do
           sdp :: ExSDP.t(),
           codecs_filter :: ({RTPMapping, FMTP} -> boolean()),
           old_inbound_tracks :: [Track.t()],
-          outbound_tracks :: [Track.t()]
+          outbound_tracks :: [Track.t()],
+          peer_id :: String.t()
         ) ::
           {new_inbound_tracks :: [Track.t()], inbound_tracks :: [Track.t()],
            outbound_tracks :: [Track.t()]}
-  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks) do
+  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks, peer_id) do
     send_only_sdp_media = Enum.filter(sdp.media, &(:sendonly in &1.attributes))
     stream_id = Track.stream_id()
 
     new_inbound_tracks =
-      Enum.map(send_only_sdp_media, &create_track_from_sdp_media(&1, stream_id, codecs_filter))
+      Enum.map(
+        send_only_sdp_media,
+        &create_track_from_sdp_media(&1, stream_id, codecs_filter, peer_id)
+      )
       |> get_new_tracks(old_inbound_tracks)
 
     recv_only_sdp_media_data = get_recvonly_media(sdp, codecs_filter)
@@ -251,7 +254,7 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter) do
+  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter, peer_id) do
     media_type = sdp_media.type
 
     ssrc = Media.get_attribute(sdp_media, :ssrc).id
@@ -265,7 +268,8 @@ defmodule Membrane.WebRTC.SDP do
       mid: mid,
       rtp_mapping: rtp,
       fmtp: fmtp,
-      status: if(disabled, do: :disabled, else: :ready)
+      status: if(disabled, do: :disabled, else: :ready),
+      peer_id: peer_id
     ]
 
     Track.new(media_type, stream_id, opts)
