@@ -31,6 +31,7 @@ defmodule Membrane.WebRTC.Track do
   """
   @spec new(:audio | :video, stream_id :: String.t(),
           id: String.t(),
+          endpoint_id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
@@ -41,11 +42,12 @@ defmodule Membrane.WebRTC.Track do
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
     name = Keyword.get(opts, :name, "#{id}-#{type}-#{stream_id}")
+    endpoint_id = Keyword.get(opts, :endpoint_id)
 
     %__MODULE__{
       type: type,
       stream_id: stream_id,
-      id: id,
+      id: "#{endpoint_id}:#{id}",
       name: name,
       ssrc: Keyword.get(opts, :ssrc),
       encoding: Keyword.get(opts, :encoding),

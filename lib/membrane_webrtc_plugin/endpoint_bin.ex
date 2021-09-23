@@ -96,6 +96,10 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
+              ],
+              endpoint_id: [
+                spec: String.t(),
+                description: "Endpoint id. It is used for creating Track id."
               ]
 
   def_input_pad :input,
@@ -175,6 +179,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state =
       %{
+        endpoint_id: opts.endpoint_id,
         inbound_tracks: %{},
         outbound_tracks: %{},
         audio_codecs: opts.audio_codecs,
@@ -281,10 +286,14 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Enum.filter(&(&1.status != :pending))
       |> Enum.map(& &1.type)
 
-    actions = [notify: {:signal, {:offer_data, tracks_types}}]
+    media_count = %{
+      audio: Enum.count(tracks_types, &(&1 == :audio)),
+      video: Enum.count(tracks_types, &(&1 == :video))
+    }
+
+    actions = [notify: {:signal, {:offer_data, media_count}}]
 
     {{:ok, actions}, state}
-    # {:ok, state}
   end
 
   @impl true
@@ -382,15 +391,13 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
       end
 
+    mid_to_track_id = Map.new(inbound_tracks ++ outbound_tracks, &{&1.mid, &1.id})
+
     actions =
-      [
-        notify:
-          {:signal,
-           {:sdp_answer, to_string(answer),
-            Map.new(inbound_tracks ++ outbound_tracks, fn track -> {track.id, track.mid} end)}}
-      ] ++
+      link_notify ++
+        [notify: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
-        actions ++ link_notify
+        actions
 
     {{:ok, actions}, state}
   end
@@ -398,6 +405,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_other({:signal, {:candidate, candidate}}, _ctx, state) do
     {{:ok, forward: {:ice, {:set_remote_candidate, "a=" <> candidate, 1}}}, state}
+  end
+
+  @impl true
+  def handle_other({:signal, :renegotiate_tracks}, _ctx, state) do
+    {action, state} = maybe_restart_ice(state, true)
+    {{:ok, action}, state}
   end
 
   @impl true
@@ -469,7 +482,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       sdp,
       state.filter_codecs,
       old_inbound_tracks,
-      outbound_tracks
+      outbound_tracks,
+      state.endpoint_id
     )
   end
 
