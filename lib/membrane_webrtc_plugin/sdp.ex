@@ -154,18 +154,18 @@ defmodule Membrane.WebRTC.SDP do
           codecs_filter :: ({RTPMapping, FMTP} -> boolean()),
           old_inbound_tracks :: [Track.t()],
           outbound_tracks :: [Track.t()],
-          peer_id :: String.t()
+          endpoint_id :: String.t()
         ) ::
           {new_inbound_tracks :: [Track.t()], inbound_tracks :: [Track.t()],
            outbound_tracks :: [Track.t()]}
-  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks, peer_id) do
+  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks, endpoint_id) do
     send_only_sdp_media = Enum.filter(sdp.media, &(:sendonly in &1.attributes))
     stream_id = Track.stream_id()
 
     new_inbound_tracks =
       Enum.map(
         send_only_sdp_media,
-        &create_track_from_sdp_media(&1, stream_id, codecs_filter, peer_id)
+        &create_track_from_sdp_media(&1, stream_id, codecs_filter, endpoint_id)
       )
       |> get_new_tracks(old_inbound_tracks)
 
@@ -254,7 +254,7 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter, peer_id) do
+  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter, endpoint_id) do
     media_type = sdp_media.type
 
     ssrc = Media.get_attribute(sdp_media, :ssrc).id
@@ -269,7 +269,7 @@ defmodule Membrane.WebRTC.SDP do
       rtp_mapping: rtp,
       fmtp: fmtp,
       status: if(disabled, do: :disabled, else: :ready),
-      peer_id: peer_id
+      endpoint_id: endpoint_id
     ]
 
     Track.new(media_type, stream_id, opts)

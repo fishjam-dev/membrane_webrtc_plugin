@@ -99,7 +99,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               ],
               endpoint_id: [
                 spec: String.t(),
-                description: "Endpoint id"
+                description: "Endpoint id. It is used for creating Track id."
               ]
 
   def_input_pad :input,
@@ -286,12 +286,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Enum.filter(&(&1.status != :pending))
       |> Enum.map(& &1.type)
 
-    types_occurences = %{
+    media_count = %{
       audio: Enum.count(tracks_types, &(&1 == :audio)),
       video: Enum.count(tracks_types, &(&1 == :video))
     }
 
-    actions = [notify: {:signal, {:offer_data, types_occurences}}]
+    actions = [notify: {:signal, {:offer_data, media_count}}]
 
     {{:ok, actions}, state}
   end

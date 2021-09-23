@@ -7,7 +7,7 @@ defmodule Membrane.WebRTC.Track do
   @enforce_keys [:type, :stream_id, :id, :name, :mid, :rtp_mapping, :fmtp, :status]
   defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
 
-  @type id :: {String.t(), String.t()}
+  @type id :: String.t()
   @type encoding :: :OPUS | :H264 | :VP8
 
   @type t :: %__MODULE__{
@@ -31,7 +31,7 @@ defmodule Membrane.WebRTC.Track do
   """
   @spec new(:audio | :video, stream_id :: String.t(),
           id: String.t(),
-          peer_id: String.t(),
+          endpoint_id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
@@ -42,12 +42,12 @@ defmodule Membrane.WebRTC.Track do
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
     name = Keyword.get(opts, :name, "#{id}-#{type}-#{stream_id}")
-    peer_id = Keyword.get(opts, :peer_id)
+    endpoint_id = Keyword.get(opts, :endpoint_id)
 
     %__MODULE__{
       type: type,
       stream_id: stream_id,
-      id: id <> ":" <> peer_id,
+      id: "#{endpoint_id}:#{id}",
       name: name,
       ssrc: Keyword.get(opts, :ssrc),
       encoding: Keyword.get(opts, :encoding),
