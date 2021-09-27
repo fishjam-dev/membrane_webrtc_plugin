@@ -357,7 +357,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
 
-    {new_inbound_tracks, inbound_tracks, outbound_tracks} =
+    {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
 
     state = %{
@@ -388,6 +388,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     mid_to_track_id = Map.new(inbound_tracks ++ outbound_tracks, &{&1.mid, &1.id})
+
+    actions =
+      if Enum.empty?(removed_inbound_tracks),
+        do: actions,
+        else: actions ++ [notify: {:removed_tracks, removed_inbound_tracks}]
 
     actions =
       link_notify ++
@@ -426,10 +431,16 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_other({:remove_tracks, tracks_ids}, _ctx, state) do
-    state = Map.update!(state, :outbound_tracks, &Map.drop(&1, tracks_ids))
-    {action, state} = maybe_restart_ice(state, true)
-    {{:ok, action}, state}
+  def handle_other({:remove_tracks, tracks_to_remove}, _ctx, state) do
+    outbound_tracks = state.outbound_tracks
+
+    new_outbound_tracks =
+      Enum.map(tracks_to_remove, &Map.get(outbound_tracks, &1.id))
+      |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
+
+    state = Map.update!(state, :outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+
+    {:ok, state}
   end
 
   @impl true
@@ -490,7 +501,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     ssrc_to_track_id = Map.new(new_tracks, fn track -> {track.ssrc, track.id} end)
     state = Map.update!(state, :ssrc_to_track_id, &Map.merge(&1, ssrc_to_track_id))
 
-    actions = [notify: {:new_tracks, new_tracks}]
+    actions = if Enum.empty?(new_tracks), do: [], else: [notify: {:new_tracks, new_tracks}]
     {actions, state}
   end
 
