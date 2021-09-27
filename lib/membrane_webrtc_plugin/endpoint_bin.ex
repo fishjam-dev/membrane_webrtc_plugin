@@ -96,10 +96,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
-              ],
-              endpoint_id: [
-                spec: String.t(),
-                description: "Endpoint id. It is used for creating Track id."
               ]
 
   def_input_pad :input,
@@ -179,7 +175,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state =
       %{
-        endpoint_id: opts.endpoint_id,
         inbound_tracks: %{},
         outbound_tracks: %{},
         audio_codecs: opts.audio_codecs,
@@ -359,10 +354,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
 
   @impl true
-  def handle_other({:signal, {:sdp_offer, sdp}}, _ctx, state) do
+  def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
 
-    {new_inbound_tracks, inbound_tracks, outbound_tracks} = get_tracks_from_sdp(sdp, state)
+    {new_inbound_tracks, inbound_tracks, outbound_tracks} =
+      get_tracks_from_sdp(sdp, mid_to_track_id, state)
 
     state = %{
       state
@@ -473,7 +469,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     end)
   end
 
-  defp get_tracks_from_sdp(sdp, state) do
+  defp get_tracks_from_sdp(sdp, mid_to_track_id, state) do
     old_inbound_tracks = Map.values(state.inbound_tracks)
 
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
@@ -483,7 +479,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       state.filter_codecs,
       old_inbound_tracks,
       outbound_tracks,
-      state.endpoint_id
+      mid_to_track_id
     )
   end
 
