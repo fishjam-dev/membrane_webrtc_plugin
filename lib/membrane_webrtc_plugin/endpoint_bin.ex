@@ -149,8 +149,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         port_range: opts.port_range,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
-        handshake_opts: opts.handshake_opts,
-        log_metadata: opts.log_metadata
+        handshake_opts: opts.handshake_opts
       },
       rtp: %Membrane.RTP.SessionBin{secure?: true},
       ice_funnel: Membrane.Funnel
