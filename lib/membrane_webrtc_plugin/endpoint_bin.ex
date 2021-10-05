@@ -184,7 +184,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
-        ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil}
+        ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil, first?: true}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -274,20 +274,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
-    state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd, restarting?: true}}
+    {actions, state} =
+      if state.ice.first?,
+        do: {[], state},
+        else: get_offer_data(state)
 
-    tracks_types =
-      Map.values(state.outbound_tracks)
-      |> Enum.filter(&(&1.status != :pending))
-      |> Enum.map(& &1.type)
-
-    media_count = %{
-      audio: Enum.count(tracks_types, &(&1 == :audio)),
-      video: Enum.count(tracks_types, &(&1 == :video))
-    }
-
-    actions = [notify: {:signal, {:offer_data, media_count}}]
-
+    state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd}}
     {{:ok, actions}, state}
   end
 
@@ -410,7 +402,23 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:signal, :renegotiate_tracks}, _ctx, state) do
-    {action, state} = maybe_restart_ice(state, true)
+    {action, state} =
+      cond do
+        state.ice.first? and state.ice.pwd != nil ->
+          state = Map.update!(state, :ice, &%{&1 | first?: false})
+          get_offer_data(state)
+
+        state.ice.first? ->
+          state = Map.update!(state, :ice, &%{&1 | first?: false})
+          {[], state}
+
+        state.ice.pwd == nil ->
+          {[], state}
+
+        true ->
+          maybe_restart_ice(state, true)
+      end
+
     {{:ok, action}, state}
   end
 
@@ -470,6 +478,23 @@ defmodule Membrane.WebRTC.EndpointBin do
     else
       {[], state}
     end
+  end
+
+  defp get_offer_data(state) do
+    tracks_types =
+      Map.values(state.outbound_tracks)
+      |> Enum.filter(&(&1.status != :pending))
+      |> Enum.map(& &1.type)
+
+    media_count = %{
+      audio: Enum.count(tracks_types, &(&1 == :audio)),
+      video: Enum.count(tracks_types, &(&1 == :video))
+    }
+
+    actions = [notify: {:signal, {:offer_data, media_count}}]
+    state = Map.update!(state, :ice, &%{&1 | restarting?: true})
+
+    {actions, state}
   end
 
   defp change_tracks_status(state, prev_status, new_status) do
