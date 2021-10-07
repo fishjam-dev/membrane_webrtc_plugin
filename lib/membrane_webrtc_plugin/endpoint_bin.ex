@@ -17,6 +17,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.WebRTC.{SDP, Track}
+  require Membrane.Logger
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -258,6 +259,33 @@ defmodule Membrane.WebRTC.EndpointBin do
     state = put_in(state, [:inbound_tracks, track_id], %{track | status: :linked})
 
     {{:ok, spec: spec}, state}
+  end
+
+  def handle_pad_removed(Pad.ref(:input, track_id) = pad, ctx, state) do
+    pad_data = ctx.pads |> Enum.find_value(fn {pad_ref, data} -> if pad_ref == pad, do: data end)
+    %{encoding: encoding} = pad_data.options
+
+    %Track{ssrc: ssrc} = Map.fetch!(state.outbound_tracks, track_id)
+
+    encoding_children =
+      case encoding do
+        :H264 -> [{:h264_parser, ssrc}]
+        _other -> []
+      end
+
+    links = [
+      link(:rtp)
+      |> via_out(Pad.ref(:rtp_output, ssrc))
+      |> to(:ice_funnel)
+    ]
+
+    children = [{:track_filter, track_id} | encoding_children]
+
+    {{:ok, remove_link: links, remove_child: children}, state}
+  end
+
+  def handle_pad_removed(_pad, _ctx, state) do
+    {:ok, state}
   end
 
   @impl true
