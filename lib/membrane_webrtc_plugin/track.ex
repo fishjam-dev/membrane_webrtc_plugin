@@ -2,10 +2,10 @@ defmodule Membrane.WebRTC.Track do
   @moduledoc """
   Module representing a WebRTC track.
   """
-  alias Membrane.RTP
+  alias ExSDP.Attribute.{RTPMapping, FMTP}
 
-  @enforce_keys [:type, :stream_id, :id, :name, :timestamp]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, enabled?: true]
+  @enforce_keys [:type, :stream_id, :id, :name, :mid, :rtp_mapping, :fmtp, :status]
+  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
 
   @type id :: String.t()
   @type encoding :: :OPUS | :H264 | :VP8
@@ -17,8 +17,10 @@ defmodule Membrane.WebRTC.Track do
           name: String.t(),
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
-          timestamp: any(),
-          enabled?: boolean()
+          status: :pending | :ready | :linked | :disabled,
+          mid: non_neg_integer(),
+          rtp_mapping: RTPMapping,
+          fmtp: FMTP
         }
 
   @doc """
@@ -29,22 +31,30 @@ defmodule Membrane.WebRTC.Track do
   """
   @spec new(:audio | :video, stream_id :: String.t(),
           id: String.t(),
+          endpoint_id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t(),
-          encoding: encoding
+          encoding: encoding,
+          mid: non_neg_integer(),
+          rtp_mapping: RTPMapping,
+          status: :pending | :ready | :linked | :disabled
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
     name = Keyword.get(opts, :name, "#{id}-#{type}-#{stream_id}")
+    endpoint_id = Keyword.get(opts, :endpoint_id)
 
     %__MODULE__{
       type: type,
       stream_id: stream_id,
-      id: id,
+      id: "#{endpoint_id}:#{id}",
       name: name,
       ssrc: Keyword.get(opts, :ssrc),
       encoding: Keyword.get(opts, :encoding),
-      timestamp: System.monotonic_time()
+      rtp_mapping: Keyword.get(opts, :rtp_mapping),
+      mid: Keyword.get(opts, :mid, nil),
+      status: Keyword.get(opts, :status, :ready),
+      fmtp: Keyword.get(opts, :fmtp)
     }
   end
 
