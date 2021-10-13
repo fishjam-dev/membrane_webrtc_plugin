@@ -154,26 +154,43 @@ defmodule Membrane.WebRTC.SDP do
           codecs_filter :: ({RTPMapping, FMTP} -> boolean()),
           old_inbound_tracks :: [Track.t()],
           outbound_tracks :: [Track.t()],
-          endpoint_id :: String.t()
+          mid_to_track_id :: %{}
         ) ::
           {new_inbound_tracks :: [Track.t()], inbound_tracks :: [Track.t()],
            outbound_tracks :: [Track.t()]}
-  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks, endpoint_id) do
+  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks, mid_to_track_id) do
     send_only_sdp_media = Enum.filter(sdp.media, &(:sendonly in &1.attributes))
+
     stream_id = Track.stream_id()
 
     new_inbound_tracks =
       Enum.map(
         send_only_sdp_media,
-        &create_track_from_sdp_media(&1, stream_id, codecs_filter, endpoint_id)
+        &create_track_from_sdp_media(&1, stream_id, codecs_filter, mid_to_track_id)
       )
       |> get_new_tracks(old_inbound_tracks)
+
+    {removed_inbound_tracks, same_inbound_track} =
+      update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id)
+
+    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_track
 
     recv_only_sdp_media_data = get_recvonly_media(sdp, codecs_filter)
     outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media_data, outbound_tracks)
 
-    {new_inbound_tracks, new_inbound_tracks ++ old_inbound_tracks, outbound_tracks}
+    {new_inbound_tracks, removed_inbound_tracks, new_inbound_tracks ++ old_inbound_tracks,
+     outbound_tracks}
   end
+
+  defp update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id),
+    do:
+      Enum.split_with(old_inbound_tracks, fn old_track ->
+        Map.has_key?(mid_to_track_id, old_track.mid)
+      end)
+      |> then(fn {same_tracks, tracks_to_update} ->
+        Enum.map(tracks_to_update, &%{&1 | status: :disabled})
+        |> then(&{&1, same_tracks})
+      end)
 
   defp encoding_to_atom(encoding_name) do
     case encoding_name do
@@ -206,13 +223,16 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   defp get_new_tracks(inbound_tracks, old_inbound_tracks) do
-    known_ssrcs = Enum.map(old_inbound_tracks, fn track -> track.ssrc end)
-    Enum.filter(inbound_tracks, &(&1.ssrc not in known_ssrcs))
+    known_ids = Enum.map(old_inbound_tracks, fn track -> track.id end)
+    Enum.filter(inbound_tracks, &(&1.id not in known_ids))
   end
 
   defp get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter) do
     media_type = sdp_media.type
     {:mid, mid} = Media.get_attribute(sdp_media, :mid)
+    result = Enum.find(sdp_media.attributes, &(&1 == :inactive))
+    disabled? = result != nil
+
     rtp_mappings = Media.get_attributes(sdp_media, :rtpmap)
     fmtp_mappings = Media.get_attributes(sdp_media, :fmtp)
 
@@ -223,7 +243,12 @@ defmodule Membrane.WebRTC.SDP do
     if new_rtp_fmtp_pairs === [] do
       raise "All payload types in SDP offer are unsupported"
     else
-      %{rtp_fmtp_mappings: new_rtp_fmtp_pairs, mid: mid, media_type: media_type, disabled?: false}
+      %{
+        rtp_fmtp_mappings: new_rtp_fmtp_pairs,
+        mid: mid,
+        media_type: media_type,
+        disabled?: disabled?
+      }
     end
   end
 
@@ -254,22 +279,23 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter, endpoint_id) do
+  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter, mid_to_track_id) do
     media_type = sdp_media.type
 
-    ssrc = Media.get_attribute(sdp_media, :ssrc).id
+    ssrc = Media.get_attribute(sdp_media, :ssrc)
+    ssrc = if ssrc == nil, do: nil, else: ssrc.id
 
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
       get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
 
     opts = [
+      id: Map.get(mid_to_track_id, mid),
       ssrc: ssrc,
       encoding: encoding_to_atom(rtp.encoding),
       mid: mid,
       rtp_mapping: rtp,
       fmtp: fmtp,
-      status: if(disabled, do: :disabled, else: :ready),
-      endpoint_id: endpoint_id
+      status: if(disabled, do: :disabled, else: :ready)
     ]
 
     Track.new(media_type, stream_id, opts)
