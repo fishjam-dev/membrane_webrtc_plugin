@@ -213,7 +213,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     # TODO: check this one
-    %{track_enabled: track_enabled, encoding: encoding, use_payloader?: use_payloader?} = ctx.options
+    %{track_enabled: track_enabled, encoding: encoding, use_payloader?: use_payloader?} =
+      ctx.options
+
     %Track{ssrc: ssrc, rtp_mapping: mapping} = Map.fetch!(state.outbound_tracks, track_id)
 
     options = [
@@ -288,7 +290,10 @@ defmodule Membrane.WebRTC.EndpointBin do
     depayloading_filter =
       case Membrane.RTP.PayloadFormatResolver.depayloader(track.encoding) do
         {:ok, depayloader} ->
-          %Membrane.RTP.DepayloaderBin{depayloader: depayloader, clock_rate: track.rtp_mapping.clock_rate}
+          %Membrane.RTP.DepayloaderBin{
+            depayloader: depayloader,
+            clock_rate: track.rtp_mapping.clock_rate
+          }
 
         :error ->
           nil
