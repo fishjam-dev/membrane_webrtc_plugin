@@ -284,7 +284,17 @@ defmodule Membrane.WebRTC.EndpointBin do
     track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | ssrc: ssrc}
     state = put_in(state, [:inbound_tracks, track.id], track)
-    {{:ok, notify: {:new_track, track.id, track.encoding}}, state}
+
+    depayloading_filter =
+      case Membrane.RTP.PayloadFormatResolver.depayloader(track.encoding) do
+        {:ok, depayloader} ->
+          %Membrane.RTP.DepayloaderBin{depayloader: depayloader, clock_rate: track.rtp_mapping.clock_rate}
+
+        :error ->
+          nil
+      end
+
+    {{:ok, notify: {:new_track, track.id, track.encoding, depayloading_filter}}, state}
   end
 
   @impl true
