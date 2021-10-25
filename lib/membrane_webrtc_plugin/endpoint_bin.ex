@@ -279,7 +279,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       ctx.options
       |> Map.take([:extensions, :packet_filters])
       |> Map.merge(%{
-        encoding: encoding,
         clock_rate: rtp_mapping.clock_rate,
         depayloader: depayloader
       })
