@@ -115,7 +115,10 @@ defmodule Membrane.WebRTC.EndpointBin do
       use_payloader?: [
         spec: boolean(),
         default: true,
-        description: "Defines if incoming stream should be payloaded based on given encoding"
+        description: """
+        Defines if incoming stream should be payloaded based on given encoding.
+        Otherwise the stream is assumed  be in RTP format.
+        """
       ]
     ]
 
@@ -142,15 +145,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       use_depayloader?: [
         spec: boolean(),
         default: true,
-        description: "Use depayloader for outgoing stream"
-      ],
-      use_jitter_buffer?: [
-        spec: boolean(),
-        default: true,
         description: """
-        Use jitter buffer before producing outgoing stream.
+        Defines if the outgoing stream should get depayloaded.
 
-        Usually should go together with depayloader.
+        This option should be used as a convenience, it is not necessary as the new track notification
+        returns a depayloading filter's definition that can be attached to the output pad
+        to work the same way as with the option set to true.
         """
       ]
     ]
@@ -237,11 +237,20 @@ defmodule Membrane.WebRTC.EndpointBin do
           & &1
       end
 
+    payloader =
+      if use_payloader? do
+        {:ok, payloader} = Membrane.RTP.PayloadFormatResolver.payloader(encoding)
+
+        payloader
+      else
+        nil
+      end
+
     links = [
       link_bin_input(pad)
       |> then(encoding_specific_links)
       |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
-      |> via_in(Pad.ref(:input, ssrc), options: [use_payloader?: use_payloader?])
+      |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
       |> to(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
       |> to(:ice_funnel)
@@ -255,13 +264,25 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping} =
       track = Map.fetch!(state.inbound_tracks, track_id)
 
-    %{track_enabled: track_enabled} = ctx.options
+    %{track_enabled: track_enabled, use_depayloader?: use_depayloader?} = ctx.options
+
+    depayloader =
+      if use_depayloader? do
+        {:ok, depayloader} = Membrane.RTP.PayloadFormatResolver.depayloader(encoding)
+
+        depayloader
+      else
+        nil
+      end
 
     output_pad_options =
       ctx.options
-      |> Map.take([:extensions, :packet_filters, :use_depayloader?])
-      |> Map.put(:encoding, encoding)
-      |> Map.put(:clock_rate, rtp_mapping.clock_rate)
+      |> Map.take([:extensions, :packet_filters])
+      |> Map.merge(%{
+        encoding: encoding,
+        clock_rate: rtp_mapping.clock_rate,
+        depayloader: depayloader
+      })
       |> Map.to_list()
 
     spec = %ParentSpec{
@@ -287,17 +308,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     track = %Track{track | ssrc: ssrc}
     state = put_in(state, [:inbound_tracks, track.id], track)
 
-    depayloading_filter =
-      case Membrane.RTP.PayloadFormatResolver.depayloader(track.encoding) do
-        {:ok, depayloader} ->
-          %Membrane.RTP.DepayloaderBin{
-            depayloader: depayloader,
-            clock_rate: track.rtp_mapping.clock_rate
-          }
-
-        :error ->
-          nil
-      end
+    depayloading_filter = depayloading_filter_for(track)
 
     {{:ok, notify: {:new_track, track.id, track.encoding, depayloading_filter}}, state}
   end
@@ -607,5 +618,18 @@ defmodule Membrane.WebRTC.EndpointBin do
     digest_str
     |> :binary.bin_to_list()
     |> Enum.map_join(":", &Base.encode16(<<&1>>))
+  end
+
+  defp depayloading_filter_for(track) do
+    case Membrane.RTP.PayloadFormatResolver.depayloader(track.encoding) do
+      {:ok, depayloader} ->
+        %Membrane.RTP.DepayloaderBin{
+          depayloader: depayloader,
+          clock_rate: track.rtp_mapping.clock_rate
+        }
+
+      :error ->
+        nil
+    end
   end
 end
