@@ -274,9 +274,12 @@ defmodule Membrane.WebRTC.EndpointBin do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
     {actions, state} =
-      if state.ice.first?,
-        do: {[], state},
-        else: get_offer_data(state)
+      if state.ice.first? and state.outbound_tracks == %{} do
+        {[], state}
+      else
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        get_offer_data(state)
+      end
 
     state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd}}
     {{:ok, actions}, state}
@@ -433,7 +436,17 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
 
     state = add_tracks(state, :outbound_tracks, tracks)
-    {action, state} = maybe_restart_ice(state, true)
+
+    {action, state} =
+      if state.ice.first? and state.ice.pwd != nil do
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        outbound_tracks = change_tracks_status(state, :pending, :ready)
+        state = %{state | outbound_tracks: outbound_tracks}
+        get_offer_data(state)
+      else
+        maybe_restart_ice(state, true)
+      end
+
     {{:ok, action}, state}
   end
 
