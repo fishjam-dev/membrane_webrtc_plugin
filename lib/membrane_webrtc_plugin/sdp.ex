@@ -98,7 +98,8 @@ defmodule Membrane.WebRTC.SDP do
       {:ice_pwd, config.ice_pwd},
       {:ice_options, "trickle"},
       {:fingerprint, config.fingerprint},
-      {:setup, if(direction == :recvonly, do: :passive, else: :active)},
+      # We assume browser always send :actpass in SDP offer
+      {:setup, :passive},
       {:mid, track.mid},
       MSID.new(track.stream_id),
       :rtcp_mux
@@ -170,12 +171,12 @@ defmodule Membrane.WebRTC.SDP do
       )
       |> get_new_tracks(old_inbound_tracks)
 
-    {removed_inbound_tracks, same_inbound_track} =
+    {removed_inbound_tracks, same_inbound_tracks} =
       update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id)
 
-    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_track
+    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_tracks
 
-    recv_only_sdp_media_data = get_recvonly_media(sdp, codecs_filter)
+    recv_only_sdp_media_data = get_media_by_attribute(sdp, codecs_filter, :recvonly)
     outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media_data, outbound_tracks)
 
     {new_inbound_tracks, removed_inbound_tracks, new_inbound_tracks ++ old_inbound_tracks,
@@ -185,7 +186,7 @@ defmodule Membrane.WebRTC.SDP do
   defp update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id),
     do:
       Enum.split_with(old_inbound_tracks, fn old_track ->
-        Map.has_key?(mid_to_track_id, old_track.mid)
+        Map.has_key?(mid_to_track_id, old_track.mid) or old_track.status == :disabled
       end)
       |> then(fn {same_tracks, tracks_to_update} ->
         Enum.map(tracks_to_update, &%{&1 | status: :disabled})
@@ -201,9 +202,9 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  defp get_recvonly_media(sdp, codecs_filter) do
-    recv_only_sdp_media = Enum.filter(sdp.media, &(:recvonly in &1.attributes))
-    Enum.map(recv_only_sdp_media, &get_mid_type_mappings_from_sdp_media(&1, codecs_filter))
+  defp get_media_by_attribute(sdp, codecs_filter, attribute) do
+    media = Enum.filter(sdp.media, &(attribute in &1.attributes))
+    Enum.map(media, &get_mid_type_mappings_from_sdp_media(&1, codecs_filter))
   end
 
   defp update_mapping_and_mid_for_track(track, mappings) do
