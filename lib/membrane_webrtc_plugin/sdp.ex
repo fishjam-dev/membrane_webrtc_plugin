@@ -98,6 +98,7 @@ defmodule Membrane.WebRTC.SDP do
       {:ice_pwd, config.ice_pwd},
       {:ice_options, "trickle"},
       {:fingerprint, config.fingerprint},
+      # We assume browser always send :actpass in SDP offer
       {:setup, :passive},
       {:mid, track.mid},
       MSID.new(track.stream_id),
@@ -175,7 +176,7 @@ defmodule Membrane.WebRTC.SDP do
 
     old_inbound_tracks = removed_inbound_tracks ++ same_inbound_tracks
 
-    recv_only_sdp_media_data = get_media_with_attribute(sdp, codecs_filter, :recvonly)
+    recv_only_sdp_media_data = get_media_by_attribute(sdp, codecs_filter, :recvonly)
     outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media_data, outbound_tracks)
 
     {new_inbound_tracks, removed_inbound_tracks, new_inbound_tracks ++ old_inbound_tracks,
@@ -201,9 +202,9 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
-  defp get_media_with_attribute(sdp, codecs_filter, attribute) do
-    recv_only_sdp_media = Enum.filter(sdp.media, &(attribute in &1.attributes))
-    Enum.map(recv_only_sdp_media, &get_mid_type_mappings_from_sdp_media(&1, codecs_filter))
+  defp get_media_by_attribute(sdp, codecs_filter, attribute) do
+    media = Enum.filter(sdp.media, &(attribute in &1.attributes))
+    Enum.map(media, &get_mid_type_mappings_from_sdp_media(&1, codecs_filter))
   end
 
   defp update_mapping_and_mid_for_track(track, mappings) do
