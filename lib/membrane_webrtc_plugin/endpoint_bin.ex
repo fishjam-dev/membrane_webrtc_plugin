@@ -356,7 +356,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state = %{
       state
-      | outbound_tracks: Map.merge(state.outbound_tracks, Map.new(outbound_tracks, &{&1.id, &1}))
+      | outbound_tracks: Map.merge(state.outbound_tracks, Map.new(outbound_tracks, &{&1.id, &1})),
+        inbound_tracks: Map.merge(state.inbound_tracks, Map.new(inbound_tracks, &{&1.id, &1}))
     }
 
     {link_notify, state} = add_inbound_tracks(new_inbound_tracks, state)

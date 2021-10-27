@@ -170,10 +170,10 @@ defmodule Membrane.WebRTC.SDP do
       )
       |> get_new_tracks(old_inbound_tracks)
 
-    {removed_inbound_tracks, same_inbound_track} =
+    {removed_inbound_tracks, same_inbound_tracks} =
       update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id)
 
-    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_track
+    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_tracks
 
     recv_only_sdp_media_data = get_media_with_attribute(sdp, codecs_filter, :recvonly)
     outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media_data, outbound_tracks)
@@ -185,7 +185,7 @@ defmodule Membrane.WebRTC.SDP do
   defp update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id),
     do:
       Enum.split_with(old_inbound_tracks, fn old_track ->
-        Map.has_key?(mid_to_track_id, old_track.mid)
+        Map.has_key?(mid_to_track_id, old_track.mid) or old_track.status == :disabled
       end)
       |> then(fn {same_tracks, tracks_to_update} ->
         Enum.map(tracks_to_update, &%{&1 | status: :disabled})
