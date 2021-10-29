@@ -459,9 +459,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       Enum.map(tracks_to_remove, &Map.get(outbound_tracks, &1.id))
       |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
 
-    state = Map.update!(state, :outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+    {actions, state} =
+      state
+      |> Map.update!(:outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+      |> maybe_restart_ice(true)
 
-    {:ok, state}
+    {{:ok, actions}, state}
   end
 
   @impl true
