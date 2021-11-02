@@ -317,9 +317,12 @@ defmodule Membrane.WebRTC.EndpointBin do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
     {actions, state} =
-      if state.ice.first?,
-        do: {[], state},
-        else: get_offer_data(state)
+      if state.ice.first? and state.outbound_tracks == %{} do
+        {[], state}
+      else
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        get_offer_data(state)
+      end
 
     state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd}}
     {{:ok, actions}, state}
@@ -396,7 +399,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state = %{
       state
-      | outbound_tracks: Map.merge(state.outbound_tracks, Map.new(outbound_tracks, &{&1.id, &1}))
+      | outbound_tracks: Map.merge(state.outbound_tracks, Map.new(outbound_tracks, &{&1.id, &1})),
+        inbound_tracks: Map.merge(state.inbound_tracks, Map.new(inbound_tracks, &{&1.id, &1}))
     }
 
     {link_notify, state} = add_inbound_tracks(new_inbound_tracks, state)
@@ -476,7 +480,17 @@ defmodule Membrane.WebRTC.EndpointBin do
       end)
 
     state = add_tracks(state, :outbound_tracks, tracks)
-    {action, state} = maybe_restart_ice(state, true)
+
+    {action, state} =
+      if state.ice.first? and state.ice.pwd != nil do
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        outbound_tracks = change_tracks_status(state, :pending, :ready)
+        state = %{state | outbound_tracks: outbound_tracks}
+        get_offer_data(state)
+      else
+        maybe_restart_ice(state, true)
+      end
+
     {{:ok, action}, state}
   end
 
@@ -488,9 +502,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       Enum.map(tracks_to_remove, &Map.get(outbound_tracks, &1.id))
       |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
 
-    state = Map.update!(state, :outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+    {actions, state} =
+      state
+      |> Map.update!(:outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+      |> maybe_restart_ice(true)
 
-    {:ok, state}
+    {{:ok, actions}, state}
   end
 
   @impl true
