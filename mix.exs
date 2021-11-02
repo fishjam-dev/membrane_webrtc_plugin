@@ -48,7 +48,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       # {:membrane_ice_plugin, "~> 0.7.0"},
       {:membrane_ice_plugin,
        github: "membraneframework/membrane_ice_plugin",
-       branch: "turn-api-in-rtc-engine",
+       branch: "turn-api-in-rtc-engine-rewriting",
        override: true},
       {:membrane_rtp_plugin, github: "membraneframework/membrane_rtp_plugin"},
       {:ex_libsrtp, "~> 0.3.0"},
