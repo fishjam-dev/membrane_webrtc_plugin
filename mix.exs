@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.1.0-alpha.3"
+  @version "0.1.0"
   @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
 
   def project do
@@ -46,9 +46,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_rtp_h264_plugin, "~> 0.5.1"},
       {:membrane_dtls_plugin, "~> 0.6.0"},
       {:membrane_ice_plugin, "~> 0.7.0"},
-      # TODO: change me back to versioned plugin
-      # {:membrane_rtp_plugin, "~> 0.7.1-alpha.3"},
-      {:membrane_rtp_plugin, github: "membraneframework/membrane_rtp_plugin"},
+      {:membrane_rtp_plugin, "~> 0.8.0"},
       {:ex_libsrtp, "~> 0.3.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.1.0"},
       {:membrane_rtp_opus_plugin, "~> 0.3.0"},
