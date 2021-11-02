@@ -226,12 +226,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     encoding_specific_links =
       case encoding do
-        :H264 ->
-          if use_payloader? do
-            &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
-          else
-            & &1
-          end
+        :H264 when use_payloader? ->
+          &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
 
         _other ->
           & &1
@@ -306,7 +302,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | ssrc: ssrc}
     state = put_in(state, [:inbound_tracks, track.id], track)
-
     depayloading_filter = depayloading_filter_for(track)
 
     {{:ok, notify: {:new_track, track.id, track.encoding, depayloading_filter}}, state}
