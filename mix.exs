@@ -8,7 +8,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
     [
       app: :membrane_webrtc_plugin,
       version: @version,
-      elixir: "~> 1.10",
+      elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -46,6 +46,8 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_rtp_h264_plugin, "~> 0.5.1"},
       {:membrane_dtls_plugin, "~> 0.6.0"},
       {:membrane_ice_plugin, "~> 0.7.0"},
+      # TODO: change me back to versioned plugin
+      # {:membrane_rtp_plugin, "~> 0.7.1-alpha.3"},
       {:membrane_rtp_plugin, github: "membraneframework/membrane_rtp_plugin"},
       {:ex_libsrtp, "~> 0.3.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.1.0"},
