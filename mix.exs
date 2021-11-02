@@ -1,14 +1,14 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.1.0-alpha.3"
+  @version "0.1.0"
   @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
 
   def project do
     [
       app: :membrane_webrtc_plugin,
       version: @version,
-      elixir: "~> 1.10",
+      elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -50,7 +50,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
        github: "membraneframework/membrane_ice_plugin",
        branch: "turn-api-in-rtc-engine-rewriting",
        override: true},
-      {:membrane_rtp_plugin, github: "membraneframework/membrane_rtp_plugin"},
+      {:membrane_rtp_plugin, "~> 0.8.0"},
       {:ex_libsrtp, "~> 0.3.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.1.0"},
       {:membrane_rtp_opus_plugin, "~> 0.3.0"},

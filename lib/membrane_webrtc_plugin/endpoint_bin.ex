@@ -16,7 +16,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
-  alias Membrane.WebRTC.{SDP, Track}
+  alias Membrane.WebRTC.{SDP, Track, TrackFilter}
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -114,13 +114,21 @@ defmodule Membrane.WebRTC.EndpointBin do
     availability: :on_request,
     options: [
       encoding: [
-        spec: :OPUS | :H264,
+        spec: :OPUS | :H264 | :VP8,
         description: "Track encoding"
       ],
       track_enabled: [
         spec: boolean(),
         default: true,
         description: "Enable or disable track"
+      ],
+      use_payloader?: [
+        spec: boolean(),
+        default: true,
+        description: """
+        Defines if incoming stream should be payloaded based on given encoding.
+        Otherwise the stream is assumed  be in RTP format.
+        """
       ]
     ]
 
@@ -143,6 +151,17 @@ defmodule Membrane.WebRTC.EndpointBin do
         spec: [Membrane.RTP.SessionBin.extension_t()],
         default: [],
         description: "List of tuples representing rtp extensions"
+      ],
+      use_depayloader?: [
+        spec: boolean(),
+        default: true,
+        description: """
+        Defines if the outgoing stream should get depayloaded.
+
+        This option should be used as a convenience, it is not necessary as the new track notification
+        returns a depayloading filter's definition that can be attached to the output pad
+        to work the same way as with the option set to true.
+        """
       ]
     ]
 
@@ -205,9 +224,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    %{encoding: encoding} = ctx.options
+    # TODO: check this one
+    %{track_enabled: track_enabled, encoding: encoding, use_payloader?: use_payloader?} =
+      ctx.options
+
     %Track{ssrc: ssrc, rtp_mapping: mapping} = Map.fetch!(state.outbound_tracks, track_id)
-    %{track_enabled: track_enabled} = ctx.pads[pad].options
 
     options = [
       encoding: encoding,
@@ -217,15 +238,27 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     encoding_specific_links =
       case encoding do
-        :H264 -> &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
-        _other -> & &1
+        :H264 when use_payloader? ->
+          &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
+
+        _other ->
+          & &1
+      end
+
+    payloader =
+      if use_payloader? do
+        {:ok, payloader} = Membrane.RTP.PayloadFormatResolver.payloader(encoding)
+
+        payloader
+      else
+        nil
       end
 
     links = [
       link_bin_input(pad)
-      |> pipe_fun(encoding_specific_links)
-      |> to({:track_filter, track_id}, %Membrane.WebRTC.TrackFilter{enabled: track_enabled})
-      |> via_in(Pad.ref(:input, ssrc))
+      |> then(encoding_specific_links)
+      |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
+      |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
       |> to(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
       |> to(:ice_funnel)
@@ -239,25 +272,33 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping} =
       track = Map.fetch!(state.inbound_tracks, track_id)
 
-    %{track_enabled: track_enabled, extensions: extensions, packet_filters: packet_filters} =
-      ctx.pads[pad].options
+    %{track_enabled: track_enabled, use_depayloader?: use_depayloader?} = ctx.options
+
+    depayloader =
+      if use_depayloader? do
+        {:ok, depayloader} = Membrane.RTP.PayloadFormatResolver.depayloader(encoding)
+
+        depayloader
+      else
+        nil
+      end
+
+    output_pad_options =
+      ctx.options
+      |> Map.take([:extensions, :packet_filters])
+      |> Map.merge(%{
+        clock_rate: rtp_mapping.clock_rate,
+        depayloader: depayloader
+      })
+      |> Map.to_list()
 
     spec = %ParentSpec{
-      children: %{
-        {:track_filter, track_id} => %Membrane.WebRTC.TrackFilter{enabled: track_enabled}
-      },
       links: [
         link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc),
-          options: [
-            encoding: encoding,
-            packet_filters: packet_filters,
-            extensions: extensions,
-            clock_rate: rtp_mapping.clock_rate
-          ]
-        )
-        |> to({:track_filter, track_id})
-        |> via_out(:output)
+        |> via_out(Pad.ref(:output, ssrc), options: output_pad_options)
+        |> to({:track_filter, track_id}, %TrackFilter{
+          enabled: track_enabled
+        })
         |> to_bin_output(pad)
       ]
     }
@@ -273,7 +314,9 @@ defmodule Membrane.WebRTC.EndpointBin do
     track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | ssrc: ssrc}
     state = put_in(state, [:inbound_tracks, track.id], track)
-    {{:ok, notify: {:new_track, track.id, track.encoding}}, state}
+    depayloading_filter = depayloading_filter_for(track)
+
+    {{:ok, notify: {:new_track, track.id, track.encoding, depayloading_filter}}, state}
   end
 
   @impl true
@@ -471,9 +514,12 @@ defmodule Membrane.WebRTC.EndpointBin do
       Enum.map(tracks_to_remove, &Map.get(outbound_tracks, &1.id))
       |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
 
-    state = Map.update!(state, :outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+    {actions, state} =
+      state
+      |> Map.update!(:outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+      |> maybe_restart_ice(true)
 
-    {:ok, state}
+    {{:ok, actions}, state}
   end
 
   @impl true
@@ -591,12 +637,22 @@ defmodule Membrane.WebRTC.EndpointBin do
     end
   end
 
-  # TODO: remove once updated to Elixir 1.12
-  defp pipe_fun(term, fun), do: fun.(term)
-
   defp hex_dump(digest_str) do
     digest_str
     |> :binary.bin_to_list()
     |> Enum.map_join(":", &Base.encode16(<<&1>>))
+  end
+
+  defp depayloading_filter_for(track) do
+    case Membrane.RTP.PayloadFormatResolver.depayloader(track.encoding) do
+      {:ok, depayloader} ->
+        %Membrane.RTP.DepayloaderBin{
+          depayloader: depayloader,
+          clock_rate: track.rtp_mapping.clock_rate
+        }
+
+      :error ->
+        nil
+    end
   end
 end
