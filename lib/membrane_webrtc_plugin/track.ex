@@ -32,7 +32,6 @@ defmodule Membrane.WebRTC.Track do
   """
   @spec new(:audio | :video, stream_id :: String.t(),
           id: String.t(),
-          endpoint_id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
@@ -54,7 +53,7 @@ defmodule Membrane.WebRTC.Track do
       ssrc: Keyword.get(opts, :ssrc),
       encoding: Keyword.get(opts, :encoding),
       rtp_mapping: Keyword.get(opts, :rtp_mapping),
-      mid: Keyword.get(opts, :mid, nil),
+      mid: Keyword.get(opts, :mid),
       status: Keyword.get(opts, :status, :ready),
       fmtp: Keyword.get(opts, :fmtp),
       extmaps: Keyword.get(opts, :extmaps, [])
