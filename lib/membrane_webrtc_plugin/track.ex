@@ -50,7 +50,7 @@ defmodule Membrane.WebRTC.Track do
       stream_id: stream_id,
       id: id,
       name: name,
-      ssrc: Keyword.get(opts, :ssrc),
+      ssrc: Keyword.get(opts, :ssrc, :crypto.strong_rand_bytes(4)),
       encoding: Keyword.get(opts, :encoding),
       rtp_mapping: Keyword.get(opts, :rtp_mapping),
       mid: Keyword.get(opts, :mid),
