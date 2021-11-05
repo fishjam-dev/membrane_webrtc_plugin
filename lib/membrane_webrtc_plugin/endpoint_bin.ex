@@ -400,18 +400,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       when state.ice.restarting? do
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
-    get_encoding = fn track_id -> Map.get(state.outbound_tracks, track_id).encoding end
-
-    outbound_tracks_id_to_link =
+    outbound_tracks_to_link =
       outbound_tracks
       |> Enum.filter(&(&1.status === :ready))
-      |> Enum.map(& &1.id)
 
-    tracks_id_to_link_with_encoding =
-      outbound_tracks_id_to_link
-      |> Enum.map(&{&1, get_encoding.(&1)})
-
-    negotiations = [notify: {:negotiation_done, tracks_id_to_link_with_encoding}]
+    negotiations = [notify: {:negotiation_done, outbound_tracks_to_link}]
 
     state = %{state | outbound_tracks: change_tracks_status(state, :ready, :linked)}
 

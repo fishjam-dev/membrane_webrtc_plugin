@@ -5,7 +5,7 @@ defmodule Membrane.WebRTC.Track do
   alias ExSDP.Attribute.{RTPMapping, FMTP, Extmap}
 
   @enforce_keys [:type, :stream_id, :id, :name, :mid, :rtp_mapping, :fmtp, :status, :extmaps]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
+  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, format: :RTP]
 
   @type id :: String.t()
   @type encoding :: :OPUS | :H264 | :VP8
@@ -22,6 +22,7 @@ defmodule Membrane.WebRTC.Track do
           rtp_mapping: RTPMapping,
           fmtp: FMTP,
           extmaps: [Extmap]
+          format: :RTP | :raw
         }
 
   @doc """
@@ -39,7 +40,8 @@ defmodule Membrane.WebRTC.Track do
           rtp_mapping: RTPMapping,
           status: :pending | :ready | :linked | :disabled,
           fmtp: FMTP,
-          extmaps: [Extmap]
+          extmaps: [Extmap],
+          depayloded?: boolean()
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))
@@ -57,6 +59,7 @@ defmodule Membrane.WebRTC.Track do
       status: Keyword.get(opts, :status, :ready),
       fmtp: Keyword.get(opts, :fmtp),
       extmaps: Keyword.get(opts, :extmaps, [])
+      format: if(Keyword.get(opts, :depayloded?, false), do: :raw, else: :RTP)
     }
   end
 
