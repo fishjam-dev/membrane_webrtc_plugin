@@ -96,6 +96,16 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: Keyword.t(),
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
+              ],
+              use_integrated_turn: [
+                spec: binary(),
+                default: true,
+                description: "Indicator, if use integrated TURN"
+              ],
+              integrated_turns_pids: [
+                spec: [pid()],
+                default: [],
+                description: "Pids of running integrated TURN servers"
               ]
 
   def_input_pad :input,
@@ -161,6 +171,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       ice: %Membrane.ICE.Bin{
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
+        use_integrated_turn: opts.use_integrated_turn,
+        integrated_turns_pids: opts.integrated_turns_pids,
         port_range: opts.port_range,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
