@@ -126,10 +126,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     caps: :any,
     availability: :on_request,
     options: [
-      encoding: [
-        spec: :OPUS | :H264 | :VP8,
-        description: "Track encoding"
-      ],
       track_enabled: [
         spec: boolean(),
         default: true,
@@ -239,13 +235,10 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    %{
-      track_enabled: track_enabled,
-      encoding: encoding,
-      use_payloader?: use_payloader?
-    } = ctx.options
+    # TODO: check this one
+    %{track_enabled: track_enabled, use_payloader?: use_payloader?} = ctx.options
 
-    %Track{ssrc: ssrc, rtp_mapping: mapping, extmaps: extmaps} =
+    %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
 
     rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
