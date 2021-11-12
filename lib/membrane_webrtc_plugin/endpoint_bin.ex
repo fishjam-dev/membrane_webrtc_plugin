@@ -17,6 +17,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.WebRTC.{SDP, Track, TrackFilter}
+  alias Membrane.ICE
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -91,15 +92,10 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
               ],
-              use_integrated_turn: [
-                spec: binary(),
-                default: true,
-                description: "Indicator, if use integrated TURN"
-              ],
-              integrated_turn_ip: [
-                spec: :inet.ip4_address() | nil,
-                default: nil,
-                description: "Address where integrated TURN server will be set up"
+              integrated_turn_options: [
+                spec: [ICE.Bin.integrated_turn_options_t()],
+                default: %{use_integrated_turn: false},
+                description: "Integrated TURN Options"
               ]
 
   def_input_pad :input,
@@ -162,10 +158,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_init(opts) do
     children = %{
-      ice: %Membrane.ICE.Bin{
+      ice: %ICE.Bin{
         stun_servers: opts.stun_servers,
-        use_integrated_turn: opts.use_integrated_turn,
-        integrated_turn_ip: opts.integrated_turn_ip,
+        integrated_turn_options: opts.integrated_turn_options,
         port_range: opts.port_range,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
@@ -394,7 +389,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_notification({:integrated_turn_servers, _turns} = msg, _from, _ctx, state) do
-    # IO.inspect(msg, label: "dupa webrtc notify msg")
     {{:ok, [notify: msg]}, state}
   end
 
