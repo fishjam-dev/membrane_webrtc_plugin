@@ -59,6 +59,12 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: 0..0,
                 description: "Port range to be used by `Membrane.ICE.Bin`"
               ],
+              turn_servers: [
+                type: :list,
+                spec: [ExLibnice.relay_info()],
+                default: [],
+                description: "List of turn servers"
+              ],
               handshake_opts: [
                 type: :list,
                 spec: Keyword.t(),
@@ -164,6 +170,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     children = %{
       ice: %Membrane.ICE.Bin{
         stun_servers: opts.stun_servers,
+        turn_servers: opts.turn_servers,
         use_integrated_turn: opts.use_integrated_turn,
         integrated_turn_ip: opts.integrated_turn_ip,
         port_range: opts.port_range,
