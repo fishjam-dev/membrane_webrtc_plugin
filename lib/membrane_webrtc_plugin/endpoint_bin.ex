@@ -418,14 +418,31 @@ defmodule Membrane.WebRTC.EndpointBin do
   @decorate trace("endpoint_bin.notification.new_rtp_stream",
               include: [:track_id, :ssrc, [:state, :id]]
             )
-  def handle_notification({:new_rtp_stream, ssrc, _pt, _extensions}, _from, _ctx, state) do
-    track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
-    track = Map.fetch!(state.inbound_tracks, track_id)
+  def handle_notification({:new_rtp_stream, ssrc, _pt, extensions}, _from, _ctx, state) do
+    track_id = Map.get(state.ssrc_to_track_id, ssrc)
+
+    {track, action} =
+      if track_id == nil do
+        track_id = Map.fetch!(state.ssrc_to_track_id, nil)
+        prototype_track = Map.fetch!(state.inbound_tracks, track_id)
+
+        new_track =
+          SDP.create_simulcast_track(prototype_track, extensions, state.ext_id_to_ext_atom)
+
+        {new_track, [notify: {:new_tracks, [new_track]}]}
+      else
+        track = Map.fetch!(state.inbound_tracks, track_id)
+        {track, []}
+      end
+
     track = %Track{track | ssrc: ssrc}
+
     state = put_in(state, [:inbound_tracks, track.id], track)
+    state = put_in(state, [:ssrc_to_track_id, ssrc], track.id)
     depayloading_filter = depayloading_filter_for(track)
 
-    {{:ok, notify: {:new_track, track.id, track.encoding, depayloading_filter}}, state}
+    {{:ok, action ++ [{:notify, {:new_track, track.id, track.encoding, depayloading_filter}}]},
+     state}
   end
 
   @impl true
@@ -543,6 +560,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
 
+    {extensions, ext_id_to_ext_atom} = SDP.get_extensions_and_ext_id_to_ext_atom(sdp)
+    state = %{state | ext_id_to_ext_atom: ext_id_to_ext_atom}
+
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
 
@@ -573,6 +593,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
       end
 
+    inbound_tracks = SDP.remove_simulcast_tracks(inbound_tracks)
     mid_to_track_id = Map.new(inbound_tracks ++ outbound_tracks, &{&1.mid, &1.id})
 
     actions =
@@ -747,6 +768,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     ssrc_to_track_id = Map.new(new_tracks, fn track -> {track.ssrc, track.id} end)
     state = Map.update!(state, :ssrc_to_track_id, &Map.merge(&1, ssrc_to_track_id))
 
+    new_tracks = Enum.filter(new_tracks, &(&1.ssrc != nil))
     actions = if Enum.empty?(new_tracks), do: [], else: [notify: {:new_tracks, new_tracks}]
     {actions, state}
   end

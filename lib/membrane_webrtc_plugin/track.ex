@@ -4,7 +4,18 @@ defmodule Membrane.WebRTC.Track do
   """
   alias ExSDP.Attribute.{RTPMapping, FMTP, Extmap}
 
-  @enforce_keys [:type, :stream_id, :id, :name, :mid, :rtp_mapping, :fmtp, :status, :extmaps]
+  @enforce_keys [
+    :type,
+    :stream_id,
+    :id,
+    :name,
+    :mid,
+    :rid,
+    :rtp_mapping,
+    :fmtp,
+    :status,
+    :extmaps
+  ]
   defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
 
   @type id :: String.t()
@@ -19,6 +30,7 @@ defmodule Membrane.WebRTC.Track do
           encoding: encoding,
           status: :pending | :ready | :linked | :disabled,
           mid: non_neg_integer(),
+          rid: [String.t()],
           rtp_mapping: RTPMapping,
           fmtp: FMTP,
           extmaps: [Extmap]
@@ -36,6 +48,7 @@ defmodule Membrane.WebRTC.Track do
           ssrc: RTP.ssrc_t(),
           encoding: encoding,
           mid: non_neg_integer(),
+          rids: [String.t()],
           rtp_mapping: RTPMapping,
           status: :pending | :ready | :linked | :disabled,
           fmtp: FMTP,
@@ -53,7 +66,8 @@ defmodule Membrane.WebRTC.Track do
       ssrc: Keyword.get(opts, :ssrc, :crypto.strong_rand_bytes(4)),
       encoding: Keyword.get(opts, :encoding),
       rtp_mapping: Keyword.get(opts, :rtp_mapping),
-      mid: Keyword.get(opts, :mid),
+      mid: Keyword.get(opts, :mid, nil),
+      rid: Keyword.get(opts, :rids, nil),
       status: Keyword.get(opts, :status, :ready),
       fmtp: Keyword.get(opts, :fmtp),
       extmaps: Keyword.get(opts, :extmaps, [])
