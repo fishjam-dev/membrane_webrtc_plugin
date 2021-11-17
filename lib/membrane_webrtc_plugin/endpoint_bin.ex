@@ -54,16 +54,16 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "List of stun servers"
               ],
+              port_range: [
+                spec: Range.t(),
+                default: 0..0,
+                description: "Port range to be used by `Membrane.ICE.Bin`"
+              ],
               turn_servers: [
                 type: :list,
                 spec: [ExLibnice.relay_info()],
                 default: [],
                 description: "List of turn servers"
-              ],
-              port_range: [
-                spec: Range.t(),
-                default: 0..0,
-                description: "Port range to be used by `Membrane.ICE.Bin`"
               ],
               handshake_opts: [
                 type: :list,
@@ -102,10 +102,10 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: true,
                 description: "Indicator, if use integrated TURN"
               ],
-              integrated_turns_pids: [
-                spec: [pid()],
-                default: [],
-                description: "Pids of running integrated TURN servers"
+              integrated_turn_ip: [
+                spec: :inet.ip4_address() | nil,
+                default: nil,
+                description: "Address where integrated TURN server will be set up"
               ]
 
   def_input_pad :input,
@@ -172,7 +172,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         stun_servers: opts.stun_servers,
         turn_servers: opts.turn_servers,
         use_integrated_turn: opts.use_integrated_turn,
-        integrated_turns_pids: opts.integrated_turns_pids,
+        integrated_turn_ip: opts.integrated_turn_ip,
         port_range: opts.port_range,
         controlling_mode: true,
         handshake_module: Membrane.DTLS.Handshake,
@@ -397,6 +397,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       when not state.ice.restarting? do
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
+  end
+
+  @impl true
+  def handle_notification({:integrated_turn_servers, _turns} = msg, _from, _ctx, state) do
+    {{:ok, [notify: msg]}, state}
   end
 
   @impl true
