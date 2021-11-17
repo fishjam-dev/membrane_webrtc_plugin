@@ -21,7 +21,13 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       name: "Membrane WebRTC plugin",
       source_url: @github_url,
       homepage_url: "https://membraneframework.org",
-      docs: docs()
+      docs: docs(),
+      releases: [
+        otel_getting_started: [
+          version: "0.0.1",
+          applications: [otel_getting_started: :permanent]
+        ]
+      ]
     ]
   end
 
@@ -53,7 +59,10 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_opus_plugin, "~> 0.7.0"},
       {:ex_doc, "~> 0.22", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0.0", only: :dev, runtime: false},
-      {:credo, "~> 1.4", only: :dev, runtime: false}
+      {:credo, "~> 1.4", only: :dev, runtime: false},
+      {:opentelemetry_api, "~> 1.0.0-rc.3"},
+      {:opentelemetry, "~> 1.0.0-rc.3"},
+      {:open_telemetry_decorator, "~> 1.0.0-rc.3"}
     ]
   end
 

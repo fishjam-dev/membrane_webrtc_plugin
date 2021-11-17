@@ -13,11 +13,13 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   use Membrane.Bin
   use Bunch
+  use OpenTelemetryDecorator
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.ICE
   alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
+  require OpenTelemetry.Tracer, as: Tracer
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -107,6 +109,16 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: [ICE.Bin.integrated_turn_options_t()],
                 default: [use_integrated_turn: false],
                 description: "Integrated TURN Options"
+              ],
+              trace_metadata: [
+                spec: :list,
+                default: [],
+                description: "A list of tuples to merge into Otel spans"
+              ],
+              trace_context: [
+                spec: :list,
+                default: [],
+                description: "Trace context for otel propagation"
               ]
 
   def_input_pad :input,
@@ -200,8 +212,19 @@ defmodule Membrane.WebRTC.EndpointBin do
       links: links
     }
 
+    trace_metadata =
+      Keyword.merge(opts.trace_metadata, [
+        {:"library.language", :erlang},
+        {:"library.name", :membrane_webrtc_plugin},
+        {:"library.version", "semver:#{Application.spec(:membrane_webrtc_plugin, :vsn)}"}
+      ])
+
+    create_or_join_otel_context(opts, trace_metadata)
+
     state =
       %{
+        trace_metadata: trace_metadata,
+        log_metadata: opts.log_metadata,
         inbound_tracks: %{},
         outbound_tracks: %{},
         rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
@@ -221,6 +244,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
+  @decorate trace("handle_pad_added.input",
+              include: [:track_id, :encoding]
+            )
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     # TODO: check this one
     %{track_enabled: track_enabled, use_payloader?: use_payloader?} = ctx.options
@@ -671,6 +697,29 @@ defmodule Membrane.WebRTC.EndpointBin do
 
       :error ->
         nil
+    end
+  end
+
+  defp create_or_join_otel_context(opts, trace_metadata) do
+    if opts.trace_context == [] do
+      {root_span, parent_ctx} =
+        case :otel_propagator_text_map.extract(opts.trace_context) do
+          :undefined ->
+            root_span = Tracer.start_span("endpoint_bin")
+            parent_ctx = Tracer.set_current_span(root_span)
+            {root_span, parent_ctx}
+
+          ctx ->
+            root_span = Tracer.start_span(ctx, "endpoint_bin")
+            {root_span, ctx}
+        end
+
+      otel_ctx = OpenTelemetry.Ctx.attach(parent_ctx)
+      OpenTelemetry.Span.set_attributes(root_span, trace_metadata)
+      OpenTelemetry.Span.end_span(root_span)
+      OpenTelemetry.Ctx.attach(otel_ctx)
+    else
+      :otel_propagator_text_map.extract(opts.trace_context)
     end
   end
 end
