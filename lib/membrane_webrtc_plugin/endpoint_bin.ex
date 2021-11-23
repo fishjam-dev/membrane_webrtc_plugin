@@ -518,13 +518,20 @@ defmodule Membrane.WebRTC.EndpointBin do
     state = add_tracks(state, :outbound_tracks, tracks)
 
     {action, state} =
-      if state.ice.first? and state.ice.pwd != nil do
-        state = Map.update!(state, :ice, &%{&1 | first?: false})
-        outbound_tracks = change_tracks_status(state, :pending, :ready)
-        state = %{state | outbound_tracks: outbound_tracks}
-        get_offer_data(state)
-      else
-        maybe_restart_ice(state, true)
+      cond do
+        state.ice.first? and state.ice.pwd != nil ->
+          state = Map.update!(state, :ice, &%{&1 | first?: false})
+          outbound_tracks = change_tracks_status(state, :pending, :ready)
+          state = %{state | outbound_tracks: outbound_tracks}
+          get_offer_data(state)
+
+        state.ice.first? and state.ice.pwd == nil ->
+          outbound_tracks = change_tracks_status(state, :pending, :ready)
+          state = %{state | outbound_tracks: outbound_tracks}
+          {[], update_in(state, [:ice, :first?], fn _old_value -> false end)}
+
+        true ->
+          maybe_restart_ice(state, true)
       end
 
     {{:ok, action}, state}
