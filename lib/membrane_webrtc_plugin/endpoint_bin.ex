@@ -304,7 +304,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:new_rtp_stream, ssrc, _pt}, _from, _ctx, state) do
+  def handle_notification({:new_rtp_stream, ssrc, _pt, _extensions}, _from, _ctx, state) do
     track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
     track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | ssrc: ssrc}
