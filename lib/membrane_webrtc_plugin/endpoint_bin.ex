@@ -178,7 +178,12 @@ defmodule Membrane.WebRTC.EndpointBin do
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
       },
-      rtp: %Membrane.RTP.SessionBin{secure?: true},
+      rtp: %Membrane.RTP.SessionBin{
+        secure?: true,
+        # TODO: remove me!
+        rtcp_receiver_report_interval: Membrane.Time.seconds(5),
+        rtcp_sender_report_interval: Membrane.Time.seconds(5),
+      },
       ice_funnel: Membrane.Funnel
     }
 
@@ -186,7 +191,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     links = [
       link(:rtp)
-      |> via_out(Pad.ref(:rtcp_output, rtp_input_ref))
+      |> via_out(Pad.ref(:rtcp_receiver_output, rtp_input_ref))
       |> to(:ice_funnel),
       link(:ice)
       |> via_out(Pad.ref(:output, 1))
@@ -255,6 +260,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     links = [
+      link(:rtp)
+      |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
+      |> to(:ice_funnel),
       link_bin_input(pad)
       |> then(encoding_specific_links)
       |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
