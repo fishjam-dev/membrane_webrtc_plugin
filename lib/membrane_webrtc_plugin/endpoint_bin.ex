@@ -233,10 +233,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
 
-    rtp_extension_mapping =
-      extmaps
-      |> Enum.map(&Extension.as_rtp_mapping(state.extensions, &1))
-      |> Enum.into(%{})
+    rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
 
     options = [
       encoding: encoding,
