@@ -18,7 +18,7 @@ defmodule Membrane.WebRTC.Extension do
   @doc """
   Returns an atom identifying the extension in `Membrane.RTP.SessionBin`.
   """
-  @callback get_name() :: RTP.rtp_extension_name_t()
+  @callback get_name() :: RTP.SessionBin.rtp_extension_name_t()
 
   @doc """
   Returns a URI that identifies extension in SDP.
@@ -86,7 +86,8 @@ defmodule Membrane.WebRTC.Extension do
   Given a list of supported extensions and a supported `Extmap`, generates a mapping from a name provided
   by an extension to an ID provided by the `Extmap`.
   """
-  @spec as_rtp_mapping([t()], Extmap.t()) :: {RTP.rtp_extension_name_t(), Extmap.extension_id()}
+  @spec as_rtp_mapping([t()], Extmap.t()) ::
+          {RTP.SessionBin.rtp_extension_name_t(), Extmap.extension_id()}
   def as_rtp_mapping(extensions, extmap) do
     extension = from_extmap(extensions, extmap)
     {extension.get_name(), extmap.id}
