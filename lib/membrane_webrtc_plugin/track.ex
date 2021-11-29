@@ -39,7 +39,7 @@ defmodule Membrane.WebRTC.Track do
           rtp_mapping: RTPMapping,
           status: :pending | :ready | :linked | :disabled,
           fmtp: FMTP,
-          extmaps: [Extmap],
+          extmaps: [Extmap]
         ) :: t
   def new(type, stream_id, opts \\ []) do
     id = Keyword.get(opts, :id, Base.encode16(:crypto.strong_rand_bytes(8)))

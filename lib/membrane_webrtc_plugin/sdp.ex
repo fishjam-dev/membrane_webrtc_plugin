@@ -19,21 +19,11 @@ defmodule Membrane.WebRTC.SDP do
   - inbound_tracks - list of inbound tracks
   - outbound_tracks - list of outbound tracks
   - mappings - dictionary where keys are tracks_id and value are mapping got from SDP offer.
-
-  Additionally accepts audio_codecs and video_codecs options,
-  that should contain lists of SDP attributes for desired codecs,
-  for example:
-
-      video_codecs: [
-        %RTPMapping{payload_type: 98, encoding: "VP9", clock_rate: 90_000}
-      ]
   """
   @spec create_answer(
           ice_ufrag: String.t(),
           ice_pwd: String.t(),
           fingerprint: fingerprint(),
-          audio_codecs: [ExSDP.Attribute.t()],
-          video_codecs: [ExSDP.Attribute.t()],
           extensions: [Extension.t()],
           inbound_tracks: [Track.t()],
           outbound_tracks: [Track.t()]
@@ -83,12 +73,7 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   defp create_sdp_media(track, direction, config) do
-    codecs = config.codecs[track.type]
-
-    payload_type =
-      if Map.has_key?(track.rtp_mapping, :payload_type),
-        do: [track.rtp_mapping.payload_type],
-        else: get_payload_types(codecs)
+    payload_type = [track.rtp_mapping.payload_type]
 
     %Media{
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_type)
@@ -133,13 +118,6 @@ defmodule Membrane.WebRTC.SDP do
       Media.add_attributes(media, [
         %SSRC{id: track.ssrc, attribute: "cname", value: track.name}
       ])
-
-  defp get_payload_types(codecs) do
-    Enum.flat_map(codecs, fn
-      %RTPMapping{payload_type: pt} -> [pt]
-      _attr -> []
-    end)
-  end
 
   @spec filter_mappings({RTPMapping, FMTP}) :: boolean()
   def filter_mappings(rtp_fmtp_pair) do

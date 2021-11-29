@@ -75,18 +75,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 refer to `Membrane.ICE.Bin`
                 """
               ],
-              video_codecs: [
-                type: :list,
-                spec: [ExSDP.Attribute.t()],
-                default: [],
-                description: "Video codecs that will be passed for SDP offer generation"
-              ],
-              audio_codecs: [
-                type: :list,
-                spec: [ExSDP.Attribute.t()],
-                default: [],
-                description: "Audio codecs that will be passed for SDP offer generation"
-              ],
               rtcp_receiver_report_interval: [
                 spec: Membrane.Time.t() | nil,
                 default: nil,
@@ -216,8 +204,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       %{
         inbound_tracks: %{},
         outbound_tracks: %{},
-        audio_codecs: opts.audio_codecs,
-        video_codecs: opts.video_codecs,
         rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
         candidates: [],
         candidate_gathering_state: nil,
@@ -447,8 +433,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
-        video_codecs: state.video_codecs,
-        audio_codecs: state.audio_codecs,
         extensions: state.extensions
       )
 
