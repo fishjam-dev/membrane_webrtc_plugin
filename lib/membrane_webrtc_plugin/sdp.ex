@@ -5,7 +5,7 @@ defmodule Membrane.WebRTC.SDP do
 
   alias ExSDP.Attribute.{RTPMapping, MSID, SSRC, FMTP, Group}
   alias ExSDP.{ConnectionData, Media}
-  alias Membrane.WebRTC.Track
+  alias Membrane.WebRTC.{Extension, Track}
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
@@ -34,6 +34,7 @@ defmodule Membrane.WebRTC.SDP do
           fingerprint: fingerprint(),
           audio_codecs: [ExSDP.Attribute.t()],
           video_codecs: [ExSDP.Attribute.t()],
+          extensions: [Extension.t()],
           inbound_tracks: [Track.t()],
           outbound_tracks: [Track.t()]
         ) :: ExSDP.t()
@@ -49,6 +50,7 @@ defmodule Membrane.WebRTC.SDP do
       ice_ufrag: Keyword.fetch!(opts, :ice_ufrag),
       ice_pwd: Keyword.fetch!(opts, :ice_pwd),
       fingerprint: Keyword.fetch!(opts, :fingerprint),
+      extensions: Keyword.fetch!(opts, :extensions),
       codecs: %{
         audio: Keyword.get(opts, :audio_codecs, []),
         video: Keyword.get(opts, :video_codecs, [])
@@ -88,12 +90,14 @@ defmodule Membrane.WebRTC.SDP do
         do: [track.rtp_mapping.payload_type],
         else: get_payload_types(codecs)
 
+    direction = if track.status === :disabled, do: :inactive, else: direction
+
     %Media{
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_type)
       | connection_data: [%ConnectionData{address: {0, 0, 0, 0}}]
     }
     |> Media.add_attributes([
-      if(track.status === :disabled, do: :inactive, else: direction),
+      direction,
       {:ice_ufrag, config.ice_ufrag},
       {:ice_pwd, config.ice_pwd},
       {:ice_options, "trickle"},
@@ -110,15 +114,16 @@ defmodule Membrane.WebRTC.SDP do
         else: [track.rtp_mapping, track.fmtp]
       )
     )
-    |> add_extensions(track.type, payload_type)
+    |> add_extensions(config.extensions, track, direction, payload_type)
     |> add_ssrc(track)
   end
 
-  defp add_extensions(media, :audio, _pt),
-    do: Media.add_attribute(media, "extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level vad=on")
+  defp add_extensions(media, extensions, %Track{type: :audio} = track, direction, pt),
+    do: Extension.add_to_media(media, extensions, track.extmaps, direction, pt)
 
-  defp add_extensions(media, :video, pt) do
+  defp add_extensions(media, extensions, %Track{type: :video} = track, direction, pt) do
     media
+    |> Extension.add_to_media(extensions, track.extmaps, direction, pt)
     |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} ccm fir"))
     |> Media.add_attribute(:rtcp_rsize)
   end
@@ -153,13 +158,21 @@ defmodule Membrane.WebRTC.SDP do
   @spec get_tracks(
           sdp :: ExSDP.t(),
           codecs_filter :: ({RTPMapping, FMTP} -> boolean()),
+          enabled_extensions :: [Extension.t()],
           old_inbound_tracks :: [Track.t()],
           outbound_tracks :: [Track.t()],
           mid_to_track_id :: %{}
         ) ::
           {new_inbound_tracks :: [Track.t()], inbound_tracks :: [Track.t()],
            outbound_tracks :: [Track.t()]}
-  def get_tracks(sdp, codecs_filter, old_inbound_tracks, outbound_tracks, mid_to_track_id) do
+  def get_tracks(
+        sdp,
+        codecs_filter,
+        enabled_extensions,
+        old_inbound_tracks,
+        outbound_tracks,
+        mid_to_track_id
+      ) do
     send_only_sdp_media = Enum.filter(sdp.media, &(:sendonly in &1.attributes))
 
     stream_id = Track.stream_id()
@@ -167,7 +180,13 @@ defmodule Membrane.WebRTC.SDP do
     new_inbound_tracks =
       Enum.map(
         send_only_sdp_media,
-        &create_track_from_sdp_media(&1, stream_id, codecs_filter, mid_to_track_id)
+        &create_track_from_sdp_media(
+          &1,
+          stream_id,
+          codecs_filter,
+          enabled_extensions,
+          mid_to_track_id
+        )
       )
       |> get_new_tracks(old_inbound_tracks)
 
@@ -280,7 +299,13 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp create_track_from_sdp_media(sdp_media, stream_id, codecs_filter, mid_to_track_id) do
+  defp create_track_from_sdp_media(
+         sdp_media,
+         stream_id,
+         codecs_filter,
+         enabled_extensions,
+         mid_to_track_id
+       ) do
     media_type = sdp_media.type
 
     ssrc = Media.get_attribute(sdp_media, :ssrc)
@@ -289,14 +314,22 @@ defmodule Membrane.WebRTC.SDP do
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
       get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
 
+    encoding = encoding_to_atom(rtp.encoding)
+
+    supported_extmaps =
+      sdp_media
+      |> Media.get_attributes(:extmap)
+      |> Enum.filter(&Extension.supported?(enabled_extensions, &1, encoding))
+
     opts = [
       id: Map.get(mid_to_track_id, mid),
       ssrc: ssrc,
-      encoding: encoding_to_atom(rtp.encoding),
+      encoding: encoding,
       mid: mid,
       rtp_mapping: rtp,
       fmtp: fmtp,
-      status: if(disabled, do: :disabled, else: :ready)
+      status: if(disabled, do: :disabled, else: :ready),
+      extmaps: supported_extmaps
     ]
 
     Track.new(media_type, stream_id, opts)

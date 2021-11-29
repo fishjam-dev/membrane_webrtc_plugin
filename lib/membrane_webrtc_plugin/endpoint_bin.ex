@@ -16,7 +16,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
-  alias Membrane.WebRTC.{SDP, Track, TrackFilter}
+  alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -31,7 +31,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   @typedoc """
   Message that enables track.
   """
-  @type enable_track_message :: {:disable_track, Track.id()}
+  @type enable_track_message :: {:enable_track, Track.id()}
 
   @typedoc """
   Message that disables track.
@@ -91,6 +91,11 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: &SDP.filter_mappings(&1),
                 description: "Defines function which will filter SDP m-line by codecs"
               ],
+              extensions: [
+                spec: [Extension.t()],
+                default: [],
+                description: "List of WebRTC extensions that should be enabled"
+              ],
               log_metadata: [
                 spec: :list,
                 spec: Keyword.t(),
@@ -142,15 +147,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         default: true,
         description: "Enable or disable track"
       ],
-      packet_filters: [
-        spec: [Membrane.RTP.SessionBin.packet_filter_t()],
-        default: [],
-        description: "List of packet filters that will be applied to the SessionBin's output pad"
-      ],
       extensions: [
         spec: [Membrane.RTP.SessionBin.extension_t()],
         default: [],
-        description: "List of tuples representing rtp extensions"
+        description:
+          "List of general extensions that will be applied to the SessionBin's output pad"
       ],
       use_depayloader?: [
         spec: boolean(),
@@ -214,6 +215,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
+        extensions: opts.extensions,
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil, first?: true}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -228,12 +230,19 @@ defmodule Membrane.WebRTC.EndpointBin do
     %{track_enabled: track_enabled, encoding: encoding, use_payloader?: use_payloader?} =
       ctx.options
 
-    %Track{ssrc: ssrc, rtp_mapping: mapping} = Map.fetch!(state.outbound_tracks, track_id)
+    %Track{ssrc: ssrc, rtp_mapping: mapping, extmaps: extmaps} =
+      Map.fetch!(state.outbound_tracks, track_id)
+
+    rtp_extension_mapping =
+      extmaps
+      |> Enum.map(&Extension.as_rtp_mapping(state.extensions, &1))
+      |> Enum.into(%{})
 
     options = [
       encoding: encoding,
       clock_rate: mapping.clock_rate,
-      payload_type: mapping.payload_type
+      payload_type: mapping.payload_type,
+      rtp_extension_mapping: rtp_extension_mapping
     ]
 
     encoding_specific_links =
@@ -269,7 +278,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
-    %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping} =
+    %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
       track = Map.fetch!(state.inbound_tracks, track_id)
 
     %{track_enabled: track_enabled, use_depayloader?: use_depayloader?} = ctx.options
@@ -283,14 +292,14 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
-    output_pad_options =
-      ctx.options
-      |> Map.take([:extensions, :packet_filters])
-      |> Map.merge(%{
-        clock_rate: rtp_mapping.clock_rate,
-        depayloader: depayloader
-      })
-      |> Map.to_list()
+    rtp_extensions = Enum.map(extmaps, &Extension.as_rtp_extension(state.extensions, &1))
+
+    output_pad_options = [
+      extensions: ctx.options.extensions,
+      rtp_extensions: rtp_extensions,
+      clock_rate: rtp_mapping.clock_rate,
+      depayloader: depayloader
+    ]
 
     spec = %ParentSpec{
       links: [
@@ -430,7 +439,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
         video_codecs: state.video_codecs,
-        audio_codecs: state.audio_codecs
+        audio_codecs: state.audio_codecs,
+        extensions: state.extensions
       )
 
     {actions, state} =
@@ -589,6 +599,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     SDP.get_tracks(
       sdp,
       state.filter_codecs,
+      state.extensions,
       old_inbound_tracks,
       outbound_tracks,
       mid_to_track_id
