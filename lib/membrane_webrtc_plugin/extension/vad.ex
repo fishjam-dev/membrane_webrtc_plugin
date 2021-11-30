@@ -20,14 +20,14 @@ defmodule Membrane.WebRTC.Extension.VAD do
   def get_uri(), do: @uri
 
   @impl true
-  def get_rtp_module(), do: @rtp_module
+  def get_rtp_module(vad_id), do: %@rtp_module{vad_id: vad_id}
 
   @impl true
-  def add_to_media(media, id, _direction, _pt),
-    do:
-      Media.add_attribute(media, %Extmap{
-        id: id,
-        uri: @uri,
-        attributes: @attributes
-      })
+  def add_to_media(media, id, _direction, _pt) do
+    Media.add_attribute(media, %Extmap{
+      id: id,
+      uri: @uri,
+      attributes: @attributes
+    })
+  end
 end

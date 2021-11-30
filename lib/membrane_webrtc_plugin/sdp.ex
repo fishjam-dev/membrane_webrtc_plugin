@@ -90,14 +90,12 @@ defmodule Membrane.WebRTC.SDP do
         do: [track.rtp_mapping.payload_type],
         else: get_payload_types(codecs)
 
-    direction = if track.status === :disabled, do: :inactive, else: direction
-
     %Media{
       Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_type)
       | connection_data: [%ConnectionData{address: {0, 0, 0, 0}}]
     }
     |> Media.add_attributes([
-      direction,
+      if(track.status === :disabled, do: :inactive, else: direction),
       {:ice_ufrag, config.ice_ufrag},
       {:ice_pwd, config.ice_pwd},
       {:ice_options, "trickle"},

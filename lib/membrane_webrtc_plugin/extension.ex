@@ -28,7 +28,7 @@ defmodule Membrane.WebRTC.Extension do
   @doc """
   Returns a module that implements the extension in `Membrane.RTP.SessionBin`.
   """
-  @callback get_rtp_module() :: Membrane.ParentSpec.child_spec_t()
+  @callback get_rtp_module(Extmap.extension_id()) :: Membrane.ParentSpec.child_spec_t()
 
   @doc """
   Adds information about extension to an SDP media.
@@ -79,7 +79,7 @@ defmodule Membrane.WebRTC.Extension do
   @spec as_rtp_extension([t()], Extmap.t()) :: RTP.SessionBin.rtp_extension_options_t()
   def as_rtp_extension(extensions, extmap) do
     extension = from_extmap(extensions, extmap)
-    {extension.get_name(), extmap.id, extension.get_rtp_module()}
+    {extension.get_name(), extension.get_rtp_module(extmap.id)}
   end
 
   @doc """
