@@ -36,10 +36,10 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
   defp deps do
     [
-      {:membrane_core, "~> 0.7.0"},
+      {:membrane_core, "~> 0.8.0", override: true},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
-      {:ex_sdp, "~> 0.5.0"},
+      {:ex_sdp, "~> 0.6.0"},
       {:membrane_rtp_format, "~> 0.3.0"},
       {:membrane_funnel_plugin, "~> 0.2.0"},
       {:membrane_h264_ffmpeg_plugin, "~> 0.12.0"},
