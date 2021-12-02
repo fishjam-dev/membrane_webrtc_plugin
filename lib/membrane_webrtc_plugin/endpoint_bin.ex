@@ -105,7 +105,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               ],
               integrated_turn_options: [
                 spec: [ICE.Bin.integrated_turn_options_t()],
-                default: %{use_integrated_turn: false},
+                default: [use_integrated_turn: false],
                 description: "Integrated TURN Options"
               ]
 
