@@ -179,10 +179,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         handshake_opts: opts.handshake_opts
       },
       rtp: %Membrane.RTP.SessionBin{
-        secure?: true,
-        # TODO: remove me!
-        rtcp_receiver_report_interval: Membrane.Time.seconds(5),
-        rtcp_sender_report_interval: Membrane.Time.seconds(5),
+        secure?: true
       },
       ice_funnel: Membrane.Funnel
     }
@@ -229,7 +226,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    # TODO: check this one
     %{track_enabled: track_enabled, encoding: encoding, use_payloader?: use_payloader?} =
       ctx.options
 
