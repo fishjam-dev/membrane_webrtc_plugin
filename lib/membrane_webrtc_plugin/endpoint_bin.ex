@@ -211,6 +211,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
         extensions: opts.extensions,
+        integrated_turn_servers: [],
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil, first?: true}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -404,8 +405,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:integrated_turn_servers, _turns} = msg, _from, _ctx, state) do
-    {{:ok, [notify: msg]}, state}
+  def handle_notification({:integrated_turn_servers, turns}, _from, _ctx, state) do
+    state = Map.put(state, :integrated_turn_servers, turns)
+    {:ok, state}
   end
 
   @impl true
@@ -577,7 +579,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       video: Enum.count(tracks_types, &(&1 == :video))
     }
 
-    actions = [notify: {:signal, {:offer_data, media_count}}]
+    actions = [notify: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}]
     state = Map.update!(state, :ice, &%{&1 | restarting?: true})
 
     {actions, state}
