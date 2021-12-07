@@ -174,9 +174,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
       },
-      rtp: %Membrane.RTP.SessionBin{
-        secure?: true
-      },
+      rtp: %Membrane.RTP.SessionBin{secure?: true},
       ice_funnel: Membrane.Funnel
     }
 
