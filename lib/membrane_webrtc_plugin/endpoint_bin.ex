@@ -304,8 +304,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
       track = Map.fetch!(state.inbound_tracks, track_id)
 
-    IO.inspect(ctx.options)
-
     %{track_enabled: track_enabled, use_depayloader?: use_depayloader?} = ctx.options
 
     depayloader =
