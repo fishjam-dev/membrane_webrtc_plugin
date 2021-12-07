@@ -7,14 +7,6 @@ defmodule Membrane.WebRTC.SDP do
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.WebRTC.{Extension, Track}
 
-  @audio_level_extension "urn:ietf:params:rtp-hdrext:ssrc-audio-level"
-  @extensions [
-    @audio_level_extension,
-    "urn:ietf:params:rtp-hdrext:sdes:mid",
-    "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id"
-  ]
-  @extension_to_atom [{0, :vad}, {1, :mid}, {2, :rid}]
-
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
   @doc """
@@ -34,13 +26,11 @@ defmodule Membrane.WebRTC.SDP do
           fingerprint: fingerprint(),
           extensions: [Extension.t()],
           inbound_tracks: [Track.t()],
-          outbound_tracks: [Track.t()],
-          ext_id_to_ext_atom: [String.t()]
+          outbound_tracks: [Track.t()]
         ) :: ExSDP.t()
   def create_answer(opts) do
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> remove_simulcast_tracks()
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks)
-    extensions = Keyword.fetch!(opts, :ext_id_to_ext_atom)
 
     mids =
       Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid)
@@ -57,11 +47,10 @@ defmodule Membrane.WebRTC.SDP do
       }
     }
 
-    attributes =
-      [
-        %Group{semantics: "BUNDLE", mids: mids},
-        "extmap-allow-mixed"
-      ] ++ extensions
+    attributes = [
+      %Group{semantics: "BUNDLE", mids: mids},
+      "extmap-allow-mixed"
+    ]
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
     |> ExSDP.add_attributes(attributes)
@@ -69,14 +58,15 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   @spec remove_simulcast_tracks(inbound_tracks :: [Track.t()]) :: [Track.t()]
-  def remove_simulcast_tracks(inbound_tracks),
-    do:
-      Enum.reduce(inbound_tracks, %{}, fn track, acc ->
-        if not Map.has_key?(acc, track.mid) or track.ssrc == nil,
-          do: Map.put(acc, track.mid, track),
-          else: acc
-      end)
-      |> Enum.map(fn {_mid, track} -> track end)
+  def remove_simulcast_tracks(inbound_tracks) do
+    inbound_tracks
+    |> Enum.reduce(%{}, fn track, acc ->
+      if not Map.has_key?(acc, track.mid) or track.ssrc == nil,
+        do: Map.put(acc, track.mid, track),
+        else: acc
+    end)
+    |> Enum.map(fn {_mid, track} -> track end)
+  end
 
   defp encoding_name_to_string(encoding_name) do
     case(encoding_name) do
@@ -324,8 +314,7 @@ defmodule Membrane.WebRTC.SDP do
     rids =
       Media.get_attributes(sdp_media, "rid")
       |> Enum.map(fn {_attr, rid} ->
-        [rid, _send] = String.split(rid, " ", parts: 2)
-        rid
+        rid |> String.split(" ", parts: 2) |> hd
       end)
 
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
@@ -353,58 +342,25 @@ defmodule Membrane.WebRTC.SDP do
     Track.new(media_type, stream_id, opts)
   end
 
-  defp extension_to_atom() do
-    Map.new(@extension_to_atom, fn {index, atom} ->
-      {Enum.at(@extensions, index), atom}
-    end)
-  end
-
-  @spec get_extensions_and_ext_id_to_ext_atom(sdp: ExSDP.t()) ::
-          {[{non_neg_integer(), String.t()}], %{}}
-  def get_extensions_and_ext_id_to_ext_atom(sdp) do
-    [sdp_media | _] = sdp.media
-    extensions = Media.get_attributes(sdp_media, "extmap")
-
-    used_extensions =
-      Enum.map(extensions, fn {_ext, extension} ->
-        [id | [extension | _]] = String.split(extension, " ", parts: 2)
-        {id, extension}
-      end)
-      |> Enum.filter(fn {_id, extension} -> extension in @extensions end)
-
-    ext_to_atom = extension_to_atom()
-
-    ext_id_to_extension =
-      Map.new(used_extensions, fn {id, extension} -> {id, Map.get(ext_to_atom, extension)} end)
-
-    extensions =
-      Enum.map(used_extensions, fn {id, extension} ->
-        extension =
-          if extension == @audio_level_extension, do: "#{extension} vad=on", else: extension
-
-        "extmap:#{id} #{extension}"
-      end)
-
-    {extensions, ext_id_to_extension}
-  end
-
-  defp extension_atom_to_data(extensions, ext_id_to_extension_atom) do
-    Enum.reduce(extensions, %{}, fn extension, acc ->
-      key = Map.get(ext_id_to_extension_atom, Integer.to_string(extension.profile_specific))
-      Map.put(acc, key, extension.data)
-    end)
-  end
-
   @spec create_simulcast_track(
           Track.t(),
           [Membrane.RTP.Header.Extension.t()],
-          %{}
+          [Membrane.WebRTC.Extension]
         ) :: Track.t()
-  def create_simulcast_track(track, extensions, ext_id_to_extension_atom) do
-    mapping = extension_atom_to_data(extensions, ext_id_to_extension_atom)
+  def create_simulcast_track(track, extensions, modules) do
+    mapping =
+      Map.new(extensions, fn extension ->
+        extension_name =
+          Enum.find(track.extmaps, &(&1.id == extension.identifier))
+          |> then(&Extension.from_extmap(modules, &1))
+          |> then(& &1.get_name())
+
+        {extension_name, extension.data}
+      end)
+
     new_track_id = "#{track.id}:#{mapping.rid}"
     stream_id = "#{track.stream_id}:#{mapping.rid}"
-    track = %{track | rid: mapping.rid, id: new_track_id, stream_id: stream_id}
-    track
+
+    %{track | rid: mapping.rid, id: new_track_id, stream_id: stream_id}
   end
 end

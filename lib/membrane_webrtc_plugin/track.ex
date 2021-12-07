@@ -66,8 +66,8 @@ defmodule Membrane.WebRTC.Track do
       ssrc: Keyword.get(opts, :ssrc, :crypto.strong_rand_bytes(4)),
       encoding: Keyword.get(opts, :encoding),
       rtp_mapping: Keyword.get(opts, :rtp_mapping),
-      mid: Keyword.get(opts, :mid, nil),
-      rid: Keyword.get(opts, :rids, nil),
+      mid: Keyword.get(opts, :mid),
+      rid: Keyword.get(opts, :rids),
       status: Keyword.get(opts, :status, :ready),
       fmtp: Keyword.get(opts, :fmtp),
       extmaps: Keyword.get(opts, :extmaps, [])

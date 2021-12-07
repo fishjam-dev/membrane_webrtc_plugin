@@ -28,7 +28,8 @@ defmodule Membrane.WebRTC.Extension do
   @doc """
   Returns a module that implements the extension in `Membrane.RTP.SessionBin`.
   """
-  @callback get_rtp_module(Extmap.extension_id()) :: Membrane.ParentSpec.child_spec_t()
+  @callback get_rtp_module(Extmap.extension_id()) ::
+              Membrane.ParentSpec.child_spec_t() | :no_rtp_module
 
   @doc """
   Adds information about extension to an SDP media.

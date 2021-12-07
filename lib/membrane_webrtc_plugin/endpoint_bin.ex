@@ -312,7 +312,9 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
 
-    rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
+    rtp_extension_mapping =
+      extmaps
+      |> Map.new(&Extension.as_rtp_mapping(state.extensions, &1))
 
     options = [
       encoding: encoding,
@@ -389,7 +391,9 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
-    rtp_extensions = Enum.map(extmaps, &Extension.as_rtp_extension(state.extensions, &1))
+    rtp_extensions =
+      Enum.map(extmaps, &Extension.as_rtp_extension(state.extensions, &1))
+      |> Enum.filter(fn {_name, rtp_module} -> rtp_module != :no_rtp_module end)
 
     output_pad_options = [
       extensions: ctx.options.extensions,
@@ -426,8 +430,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         track_id = Map.fetch!(state.ssrc_to_track_id, nil)
         prototype_track = Map.fetch!(state.inbound_tracks, track_id)
 
-        new_track =
-          SDP.create_simulcast_track(prototype_track, extensions, state.ext_id_to_ext_atom)
+        new_track = SDP.create_simulcast_track(prototype_track, extensions, state.extensions)
 
         {new_track, [notify: {:new_tracks, [new_track]}]}
       else
@@ -559,9 +562,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   @decorate trace("endpoint_bin.other.sdp_offer", include: [[:state, :id]])
   def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
-
-    {extensions, ext_id_to_ext_atom} = SDP.get_extensions_and_ext_id_to_ext_atom(sdp)
-    state = %{state | ext_id_to_ext_atom: ext_id_to_ext_atom}
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
