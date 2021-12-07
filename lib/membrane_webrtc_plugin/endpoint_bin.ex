@@ -87,6 +87,18 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Audio codecs that will be passed for SDP offer generation"
               ],
+              rtcp_receiver_report_interval: [
+                spec: Membrane.Time.t() | nil,
+                default: nil,
+                description:
+                  "Receiver reports's generation interval, set to nil to avoid reports generation"
+              ],
+              rtcp_sender_report_interval: [
+                spec: Membrane.Time.t() | nil,
+                default: nil,
+                description:
+                  "Sender reports's generation interval, set to nil to avoid reports generation"
+              ],
               filter_codecs: [
                 spec: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
                 default: &SDP.filter_mappings(&1),
@@ -174,13 +186,18 @@ defmodule Membrane.WebRTC.EndpointBin do
         handshake_module: Membrane.DTLS.Handshake,
         handshake_opts: opts.handshake_opts
       },
-      rtp: %Membrane.RTP.SessionBin{secure?: true},
+      rtp: %Membrane.RTP.SessionBin{
+        secure?: true,
+        rtcp_receiver_report_interval: opts.rtcp_receiver_report_interval,
+        rtcp_sender_report_interval: opts.rtcp_sender_report_interval
+      },
       ice_funnel: Membrane.Funnel
     }
 
     rtp_input_ref = make_ref()
 
     links = [
+      # always link :rtcp_receiver_output to handle FIR RTCP packets
       link(:rtp)
       |> via_out(Pad.ref(:rtcp_receiver_output, rtp_input_ref))
       |> to(:ice_funnel),
@@ -205,6 +222,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         outbound_tracks: %{},
         audio_codecs: opts.audio_codecs,
         video_codecs: opts.video_codecs,
+        rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
         candidates: [],
         candidate_gathering_state: nil,
         dtls_fingerprint: nil,
@@ -221,8 +239,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    %{track_enabled: track_enabled, encoding: encoding, use_payloader?: use_payloader?} =
-      ctx.options
+    %{
+      track_enabled: track_enabled,
+      encoding: encoding,
+      use_payloader?: use_payloader?
+    } = ctx.options
 
     %Track{ssrc: ssrc, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
@@ -254,18 +275,26 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
-    links = [
-      link(:rtp)
-      |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
-      |> to(:ice_funnel),
-      link_bin_input(pad)
-      |> then(encoding_specific_links)
-      |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
-      |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
-      |> to(:rtp)
-      |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
-      |> to(:ice_funnel)
-    ]
+    # link sender reports's pad only if we are going to generate the reports
+    links =
+      if state.rtcp_sender_report_interval do
+        [
+          link(:rtp)
+          |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
+          |> to(:ice_funnel)
+        ]
+      else
+        []
+      end ++
+        [
+          link_bin_input(pad)
+          |> then(encoding_specific_links)
+          |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
+          |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
+          |> to(:rtp)
+          |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
+          |> to(:ice_funnel)
+        ]
 
     {{:ok, spec: %ParentSpec{links: links}}, state}
   end
@@ -274,6 +303,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_pad_added(Pad.ref(:output, track_id) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
       track = Map.fetch!(state.inbound_tracks, track_id)
+
+    IO.inspect(ctx.options)
 
     %{track_enabled: track_enabled, use_depayloader?: use_depayloader?} = ctx.options
 
