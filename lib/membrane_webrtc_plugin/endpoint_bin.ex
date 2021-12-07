@@ -75,18 +75,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 refer to `Membrane.ICE.Bin`
                 """
               ],
-              video_codecs: [
-                type: :list,
-                spec: [ExSDP.Attribute.t()],
-                default: [],
-                description: "Video codecs that will be passed for SDP offer generation"
-              ],
-              audio_codecs: [
-                type: :list,
-                spec: [ExSDP.Attribute.t()],
-                default: [],
-                description: "Audio codecs that will be passed for SDP offer generation"
-              ],
               rtcp_receiver_report_interval: [
                 spec: Membrane.Time.t() | nil,
                 default: nil,
@@ -126,10 +114,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     caps: :any,
     availability: :on_request,
     options: [
-      encoding: [
-        spec: :OPUS | :H264 | :VP8,
-        description: "Track encoding"
-      ],
       track_enabled: [
         spec: boolean(),
         default: true,
@@ -220,8 +204,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       %{
         inbound_tracks: %{},
         outbound_tracks: %{},
-        audio_codecs: opts.audio_codecs,
-        video_codecs: opts.video_codecs,
         rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
         candidates: [],
         candidate_gathering_state: nil,
@@ -229,6 +211,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
         extensions: opts.extensions,
+        integrated_turn_servers: [],
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil, first?: true}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -239,13 +222,10 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    %{
-      track_enabled: track_enabled,
-      encoding: encoding,
-      use_payloader?: use_payloader?
-    } = ctx.options
+    # TODO: check this one
+    %{track_enabled: track_enabled, use_payloader?: use_payloader?} = ctx.options
 
-    %Track{ssrc: ssrc, rtp_mapping: mapping, extmaps: extmaps} =
+    %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
 
     rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
@@ -400,18 +380,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       when state.ice.restarting? do
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
-    get_encoding = fn track_id -> Map.get(state.outbound_tracks, track_id).encoding end
-
-    outbound_tracks_id_to_link =
+    new_outbound_tracks =
       outbound_tracks
       |> Enum.filter(&(&1.status === :ready))
-      |> Enum.map(& &1.id)
 
-    tracks_id_to_link_with_encoding =
-      outbound_tracks_id_to_link
-      |> Enum.map(&{&1, get_encoding.(&1)})
-
-    negotiations = [notify: {:negotiation_done, tracks_id_to_link_with_encoding}]
+    negotiations = [notify: {:negotiation_done, new_outbound_tracks}]
 
     state = %{state | outbound_tracks: change_tracks_status(state, :ready, :linked)}
 
@@ -432,8 +405,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:integrated_turn_servers, _turns} = msg, _from, _ctx, state) do
-    {{:ok, [notify: msg]}, state}
+  def handle_notification({:integrated_turn_servers, turns}, _from, _ctx, state) do
+    state = Map.put(state, :integrated_turn_servers, turns)
+    {:ok, state}
   end
 
   @impl true
@@ -461,8 +435,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
-        video_codecs: state.video_codecs,
-        audio_codecs: state.audio_codecs,
         extensions: state.extensions
       )
 
@@ -532,13 +504,20 @@ defmodule Membrane.WebRTC.EndpointBin do
     state = add_tracks(state, :outbound_tracks, tracks)
 
     {action, state} =
-      if state.ice.first? and state.ice.pwd != nil do
-        state = Map.update!(state, :ice, &%{&1 | first?: false})
-        outbound_tracks = change_tracks_status(state, :pending, :ready)
-        state = %{state | outbound_tracks: outbound_tracks}
-        get_offer_data(state)
-      else
-        maybe_restart_ice(state, true)
+      cond do
+        state.ice.first? and state.ice.pwd != nil ->
+          state = Map.update!(state, :ice, &%{&1 | first?: false})
+          outbound_tracks = change_tracks_status(state, :pending, :ready)
+          state = %{state | outbound_tracks: outbound_tracks}
+          get_offer_data(state)
+
+        state.ice.first? and state.ice.pwd == nil ->
+          outbound_tracks = change_tracks_status(state, :pending, :ready)
+          state = %{state | outbound_tracks: outbound_tracks}
+          {[], update_in(state, [:ice, :first?], fn _old_value -> false end)}
+
+        true ->
+          maybe_restart_ice(state, true)
       end
 
     {{:ok, action}, state}
@@ -600,7 +579,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       video: Enum.count(tracks_types, &(&1 == :video))
     }
 
-    actions = [notify: {:signal, {:offer_data, media_count}}]
+    actions = [notify: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}]
     state = Map.update!(state, :ice, &%{&1 | restarting?: true})
 
     {actions, state}
