@@ -43,7 +43,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_rtp_format, "~> 0.3.0"},
       {:membrane_funnel_plugin, "~> 0.2.0"},
       {:membrane_h264_ffmpeg_plugin, "~> 0.12.0"},
-      {:membrane_rtp_h264_plugin, "~> 0.5.1"},
+      {:membrane_rtp_h264_plugin, "~> 0.7.1"},
       {:membrane_dtls_plugin, "~> 0.6.0"},
       # {:membrane_ice_plugin, "~> 0.7.0"},
       {:membrane_ice_plugin, github: "membraneframework/membrane_ice_plugin", override: true},
