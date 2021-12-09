@@ -19,7 +19,7 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   def get_uri(), do: @uri
 
   @impl true
-  def get_rtp_module(_twcc_id), do: @rtp_module
+  def get_rtp_module(twcc_id), do: %@rtp_module{twcc_id: twcc_id}
 
   @impl true
   def add_to_media(media, _extmap, :sendonly, _payload_types), do: media
