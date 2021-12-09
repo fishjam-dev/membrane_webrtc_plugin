@@ -312,9 +312,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
 
-    rtp_extension_mapping =
-      extmaps
-      |> Map.new(&Extension.as_rtp_mapping(state.extensions, &1))
+    rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
 
     options = [
       encoding: encoding,
@@ -392,8 +390,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     rtp_extensions =
-      Enum.map(extmaps, &Extension.as_rtp_extension(state.extensions, &1))
-      |> Enum.filter(fn {_name, rtp_module} -> rtp_module != :no_rtp_module end)
+      extmaps
+      |> Enum.map(&Extension.as_rtp_extension(state.extensions, &1))
+      |> Enum.reject(fn {_name, rtp_module} -> rtp_module == :no_rtp_module end)
 
     output_pad_options = [
       extensions: ctx.options.extensions,
@@ -422,20 +421,21 @@ defmodule Membrane.WebRTC.EndpointBin do
   @decorate trace("endpoint_bin.notification.new_rtp_stream",
               include: [:track_id, :ssrc, [:state, :id]]
             )
-  def handle_notification({:new_rtp_stream, ssrc, _pt, extensions}, _from, _ctx, state) do
-    track_id = Map.get(state.ssrc_to_track_id, ssrc)
+  def handle_notification({:new_rtp_stream, ssrc, _pt, rtp_header_extensions}, _from, _ctx, state) do
+    {track, maybe_simulcast_action} =
+      case Map.get(state.ssrc_to_track_id, ssrc, :simulcast) do
+        :simulcast ->
+          track_id = Map.get(state.ssrc_to_track_id, :simulcast)
+          prototype_track = Map.fetch!(state.inbound_tracks, track_id)
 
-    {track, action} =
-      if track_id == nil do
-        track_id = Map.fetch!(state.ssrc_to_track_id, nil)
-        prototype_track = Map.fetch!(state.inbound_tracks, track_id)
+          new_track =
+            SDP.create_simulcast_track(prototype_track, rtp_header_extensions, state.extensions)
 
-        new_track = SDP.create_simulcast_track(prototype_track, extensions, state.extensions)
+          {new_track, [notify: {:new_tracks, [new_track]}]}
 
-        {new_track, [notify: {:new_tracks, [new_track]}]}
-      else
-        track = Map.fetch!(state.inbound_tracks, track_id)
-        {track, []}
+        track_id ->
+          track = Map.fetch!(state.inbound_tracks, track_id)
+          {track, []}
       end
 
     track = %Track{track | ssrc: ssrc}
@@ -444,8 +444,9 @@ defmodule Membrane.WebRTC.EndpointBin do
     state = put_in(state, [:ssrc_to_track_id, ssrc], track.id)
     depayloading_filter = depayloading_filter_for(track)
 
-    {{:ok, action ++ [{:notify, {:new_track, track.id, track.encoding, depayloading_filter}}]},
-     state}
+    {{:ok,
+      maybe_simulcast_action ++
+        [{:notify, {:new_track, track.id, track.encoding, depayloading_filter}}]}, state}
   end
 
   @impl true

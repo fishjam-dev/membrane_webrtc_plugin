@@ -61,7 +61,7 @@ defmodule Membrane.WebRTC.SDP do
   def remove_simulcast_tracks(inbound_tracks) do
     inbound_tracks
     |> Enum.reduce(%{}, fn track, acc ->
-      if not Map.has_key?(acc, track.mid) or track.ssrc == nil,
+      if not Map.has_key?(acc, track.mid) or track.ssrc == :simulcast,
         do: Map.put(acc, track.mid, track),
         else: acc
     end)
@@ -123,10 +123,11 @@ defmodule Membrane.WebRTC.SDP do
     |> Media.add_attribute(:rtcp_rsize)
   end
 
-  defp add_ssrc(media, %Track{ssrc: nil} = track) do
+  defp add_ssrc(media, %Track{ssrc: :simulcast} = track) do
     rids = Enum.join(track.rid, ";")
 
-    Enum.reduce(track.rid, media, fn rid, media ->
+    track.rid
+    |> Enum.reduce(media, fn rid, media ->
       Media.add_attribute(media, "rid:#{rid} recv")
     end)
     |> Media.add_attribute("simulcast:recv #{rids}")
@@ -309,12 +310,13 @@ defmodule Membrane.WebRTC.SDP do
     media_type = sdp_media.type
 
     ssrc = Media.get_attribute(sdp_media, :ssrc)
-    ssrc = if ssrc == nil, do: nil, else: ssrc.id
+    ssrc = if ssrc == nil, do: :simulcast, else: ssrc.id
 
     rids =
-      Media.get_attributes(sdp_media, "rid")
+      sdp_media
+      |> Media.get_attributes("rid")
       |> Enum.map(fn {_attr, rid} ->
-        rid |> String.split(" ", parts: 2) |> hd
+        rid |> String.split(" ", parts: 2) |> hd()
       end)
 
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
@@ -332,7 +334,7 @@ defmodule Membrane.WebRTC.SDP do
       ssrc: ssrc,
       encoding: encoding,
       mid: mid,
-      rids: if(ssrc == nil, do: rids, else: nil),
+      rids: if(ssrc == :simulcast, do: rids, else: nil),
       rtp_mapping: rtp,
       fmtp: fmtp,
       status: if(disabled, do: :disabled, else: :ready),
@@ -347,9 +349,9 @@ defmodule Membrane.WebRTC.SDP do
           [Membrane.RTP.Header.Extension.t()],
           [Membrane.WebRTC.Extension]
         ) :: Track.t()
-  def create_simulcast_track(track, extensions, modules) do
+  def create_simulcast_track(track, rtp_header_extensions, modules) do
     mapping =
-      Map.new(extensions, fn extension ->
+      Map.new(rtp_header_extensions, fn extension ->
         extension_name =
           Enum.find(track.extmaps, &(&1.id == extension.identifier))
           |> then(&Extension.from_extmap(modules, &1))
