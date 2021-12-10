@@ -769,7 +769,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     ssrc_to_track_id = Map.new(new_tracks, fn track -> {track.ssrc, track.id} end)
     state = Map.update!(state, :ssrc_to_track_id, &Map.merge(&1, ssrc_to_track_id))
 
-    new_tracks = Enum.filter(new_tracks, &(&1.ssrc != nil))
+    new_tracks = Enum.filter(new_tracks, &(&1.ssrc != :simulcast))
     actions = if Enum.empty?(new_tracks), do: [], else: [notify: {:new_tracks, new_tracks}]
     {actions, state}
   end

@@ -124,9 +124,9 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   defp add_ssrc(media, %Track{ssrc: :simulcast} = track) do
-    rids = Enum.join(track.rid, ";")
+    rids = Enum.join(track.rids, ";")
 
-    track.rid
+    track.rids
     |> Enum.reduce(media, fn rid, media ->
       Media.add_attribute(media, "rid:#{rid} recv")
     end)
@@ -361,8 +361,7 @@ defmodule Membrane.WebRTC.SDP do
       end)
 
     new_track_id = "#{track.id}:#{mapping.rid}"
-    stream_id = "#{track.stream_id}:#{mapping.rid}"
 
-    %{track | rid: mapping.rid, id: new_track_id, stream_id: stream_id}
+    %{track | rids: [mapping.rid], id: new_track_id}
   end
 end
