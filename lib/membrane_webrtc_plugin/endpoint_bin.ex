@@ -170,6 +170,55 @@ defmodule Membrane.WebRTC.EndpointBin do
       ]
     ]
 
+  defmodule State do
+    @moduledoc false
+    use Bunch.Access
+
+    @type t :: %__MODULE__{
+            id: String.t(),
+            trace_metadata: Keyword.t(),
+            log_metadata: Keyword.t(),
+            inbound_tracks: %{Track.id() => Track.t()},
+            outbound_tracks: %{Track.id() => Track.t()},
+            rtcp_sender_report_interval: Membrane.Time.t() | nil,
+            candidates: [any()],
+            candidate_gathering_state: nil | :in_progress | :done,
+            dtls_fingerprint: nil | {:sha256, binary()},
+            ssrc_to_track_id: %{RTP.ssrc_t() => Track.id()},
+            filter_codecs: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
+            extensions: [Extension.t()],
+            integrated_turn_servers: [any()],
+            ice: %{
+              restarting?: boolean(),
+              waiting_restart?: boolean(),
+              pwd: nil | String.t(),
+              ufrag: nil | String.t(),
+              first?: boolean
+            }
+          }
+
+    defstruct id: "endpointBin",
+              trace_metadata: [],
+              log_metadata: [],
+              inbound_tracks: %{},
+              outbound_tracks: %{},
+              rtcp_sender_report_interval: nil,
+              candidates: [],
+              candidate_gathering_state: nil,
+              dtls_fingerprint: nil,
+              ssrc_to_track_id: %{},
+              filter_codecs: &SDP.filter_mappings(&1),
+              extensions: [],
+              integrated_turn_servers: [],
+              ice: %{
+                restarting?: false,
+                waiting_restart?: false,
+                pwd: nil,
+                ufrag: nil,
+                first?: true
+              }
+  end
+
   @impl true
   def handle_init(opts) do
     trace_metadata =
@@ -222,7 +271,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     }
 
     state =
-      %{
+      %State{
         id: Keyword.get(trace_metadata, :name, "endpointBin"),
         trace_metadata: trace_metadata,
         log_metadata: opts.log_metadata,
