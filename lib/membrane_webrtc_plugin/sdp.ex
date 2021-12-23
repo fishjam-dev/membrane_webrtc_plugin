@@ -167,7 +167,7 @@ defmodule Membrane.WebRTC.SDP do
       |> get_new_tracks(old_inbound_tracks)
 
     {removed_inbound_tracks, same_inbound_tracks} =
-      update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id)
+      update_inbound_tracks_status(sdp, old_inbound_tracks, mid_to_track_id)
 
     old_inbound_tracks = removed_inbound_tracks ++ same_inbound_tracks
 
@@ -178,10 +178,15 @@ defmodule Membrane.WebRTC.SDP do
      outbound_tracks}
   end
 
-  defp update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id),
+  defp update_inbound_tracks_status(sdp, old_inbound_tracks, mid_to_track_id),
     do:
       Enum.split_with(old_inbound_tracks, fn old_track ->
-        Map.has_key?(mid_to_track_id, old_track.mid) or old_track.status == :disabled
+        [sdp_track] =
+          Enum.filter(sdp.media, fn media -> {:mid, old_track.mid} in media.attributes end)
+
+        # we have to check whether this track was not marked as inactive in incoming SDP offer
+        (Map.has_key?(mid_to_track_id, old_track.mid) or old_track.status == :disabled) and
+          :inactive not in sdp_track.attributes
       end)
       |> then(fn {same_tracks, tracks_to_update} ->
         Enum.map(tracks_to_update, &%{&1 | status: :disabled})
