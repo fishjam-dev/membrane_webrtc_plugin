@@ -26,7 +26,7 @@ defmodule Membrane.WebRTC.Track do
           stream_id: String.t(),
           id: id,
           name: String.t(),
-          ssrc: RTP.ssrc_t() | :simulcast,
+          ssrc: RTP.ssrc_t() | binary(),
           encoding: encoding,
           status: :pending | :ready | :linked | :disabled,
           mid: non_neg_integer(),

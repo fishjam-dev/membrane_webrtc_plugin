@@ -26,7 +26,8 @@ defmodule Membrane.WebRTC.Extension do
   @callback get_uri() :: String.t()
 
   @doc """
-  Returns a module that implements the extension in `Membrane.RTP.SessionBin`.
+  Returns a module that implements the extension in `Membrane.RTP.SessionBin` or `:no_rtp_module` if such
+  such module would only forward buffers to next element.
   """
   @callback get_rtp_module(Extmap.extension_id()) ::
               Membrane.ParentSpec.child_spec_t() | :no_rtp_module

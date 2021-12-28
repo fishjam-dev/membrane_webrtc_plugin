@@ -29,7 +29,7 @@ defmodule Membrane.WebRTC.SDP do
           outbound_tracks: [Track.t()]
         ) :: ExSDP.t()
   def create_answer(opts) do
-    inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> remove_simulcast_tracks()
+    inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> filter_simulcast_tracks()
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks)
 
     mids =
@@ -48,8 +48,7 @@ defmodule Membrane.WebRTC.SDP do
     }
 
     attributes = [
-      %Group{semantics: "BUNDLE", mids: mids},
-      "extmap-allow-mixed"
+      %Group{semantics: "BUNDLE", mids: mids}
     ]
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
@@ -57,11 +56,14 @@ defmodule Membrane.WebRTC.SDP do
     |> add_tracks(inbound_tracks, outbound_tracks, config)
   end
 
-  @spec remove_simulcast_tracks(inbound_tracks :: [Track.t()]) :: [Track.t()]
-  def remove_simulcast_tracks(inbound_tracks) do
+  @doc """
+  Remove from list all simulcast tracks, which aren't prototypes.
+  """
+  @spec filter_simulcast_tracks(inbound_tracks :: [Track.t()]) :: [Track.t()]
+  def filter_simulcast_tracks(inbound_tracks) do
     inbound_tracks
     |> Enum.reduce(%{}, fn track, acc ->
-      if not Map.has_key?(acc, track.mid) or track.ssrc == :simulcast,
+      if not Map.has_key?(acc, track.mid) or simulcast_ssrc?(track.ssrc),
         do: Map.put(acc, track.mid, track),
         else: acc
     end)
@@ -110,7 +112,7 @@ defmodule Membrane.WebRTC.SDP do
       )
     )
     |> add_extensions(config.extensions, track, direction, payload_type)
-    |> add_ssrc(track)
+    |> add_ssrc_or_rids(track)
   end
 
   defp add_extensions(media, extensions, %Track{type: :audio} = track, direction, pt),
@@ -123,7 +125,12 @@ defmodule Membrane.WebRTC.SDP do
     |> Media.add_attribute(:rtcp_rsize)
   end
 
-  defp add_ssrc(media, %Track{ssrc: :simulcast} = track) do
+  defp add_ssrc_or_rids(media, track) do
+    new_ssrc = if simulcast_ssrc?(track.ssrc), do: :simulcast, else: track.ssrc
+    do_add_ssrc_or_rids(media, %{track | ssrc: new_ssrc})
+  end
+
+  defp do_add_ssrc_or_rids(media, %Track{ssrc: :simulcast} = track) do
     rids = Enum.join(track.rids, ";")
 
     track.rids
@@ -133,12 +140,15 @@ defmodule Membrane.WebRTC.SDP do
     |> Media.add_attribute("simulcast:recv #{rids}")
   end
 
-  defp add_ssrc(media, track),
+  defp do_add_ssrc_or_rids(media, track),
     do:
       Media.add_attributes(media, [
         %SSRC{id: track.ssrc, attribute: "cname", value: track.name}
       ])
 
+  @doc """
+  Default value for filter_codecs option in `Membrane.WebRTC.EndpointBin`.
+  """
   @spec filter_mappings({RTPMapping, FMTP}) :: boolean()
   def filter_mappings(rtp_fmtp_pair) do
     {rtp, fmtp} = rtp_fmtp_pair
@@ -151,6 +161,12 @@ defmodule Membrane.WebRTC.SDP do
     end
   end
 
+  @doc """
+  Returns how tracks have changed based on SDP offer.
+
+  Function returns four-element tuple, which contains list of new tracks, list of removed tracks, list of all inbound tracks
+  and list of all outbound tracks.
+  """
   @spec get_tracks(
           sdp :: ExSDP.t(),
           codecs_filter :: ({RTPMapping, FMTP} -> boolean()),
@@ -159,8 +175,8 @@ defmodule Membrane.WebRTC.SDP do
           outbound_tracks :: [Track.t()],
           mid_to_track_id :: %{}
         ) ::
-          {new_inbound_tracks :: [Track.t()], inbound_tracks :: [Track.t()],
-           outbound_tracks :: [Track.t()]}
+          {new_inbound_tracks :: [Track.t()], removed_inbound_tracks :: [Track.t()],
+           inbound_tracks :: [Track.t()], outbound_tracks :: [Track.t()]}
   def get_tracks(
         sdp,
         codecs_filter,
@@ -309,9 +325,6 @@ defmodule Membrane.WebRTC.SDP do
        ) do
     media_type = sdp_media.type
 
-    ssrc = Media.get_attribute(sdp_media, :ssrc)
-    ssrc = if ssrc == nil, do: :simulcast, else: ssrc.id
-
     rids =
       sdp_media
       |> Media.get_attributes("rid")
@@ -321,6 +334,12 @@ defmodule Membrane.WebRTC.SDP do
 
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
       get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
+
+    # This function is called only for tracks send_only_media, which means that SSRC for this m-line
+    # must be provided by the offerer, if this doesn't happen this means
+    # that this is a simulcast track and it has got rid
+    ssrc = Media.get_attribute(sdp_media, :ssrc)
+    ssrc = if ssrc == nil, do: "simulcast#{mid}", else: ssrc.id
 
     encoding = encoding_to_atom(rtp.encoding)
 
@@ -334,7 +353,7 @@ defmodule Membrane.WebRTC.SDP do
       ssrc: ssrc,
       encoding: encoding,
       mid: mid,
-      rids: if(ssrc == :simulcast, do: rids, else: nil),
+      rids: if(rids == [], do: nil, else: rids),
       rtp_mapping: rtp,
       fmtp: fmtp,
       status: if(disabled, do: :disabled, else: :ready),
@@ -344,6 +363,9 @@ defmodule Membrane.WebRTC.SDP do
     Track.new(media_type, stream_id, opts)
   end
 
+  @doc """
+  Creates simulcast track based on prototype track, rtp header extenstions, and EndpointBin extensions.
+  """
   @spec create_simulcast_track(
           Track.t(),
           [Membrane.RTP.Header.Extension.t()],
@@ -362,6 +384,14 @@ defmodule Membrane.WebRTC.SDP do
 
     new_track_id = "#{track.id}:#{mapping.rid}"
 
-    %{track | rids: [mapping.rid], id: new_track_id}
+    %{track | mid: mapping.mid, rids: [mapping.rid], id: new_track_id}
   end
+
+  @doc """
+  Check if this is simulcast ssrc
+
+  Simulcast ssrc has format like this: `simulcast<mid>`
+  """
+  @spec simulcast_ssrc?(ssrc :: any()) :: boolean()
+  def simulcast_ssrc?(ssrc), do: is_binary(ssrc) and String.starts_with?(ssrc, "simulcast")
 end

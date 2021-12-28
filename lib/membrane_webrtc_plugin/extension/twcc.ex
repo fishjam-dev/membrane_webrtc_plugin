@@ -1,5 +1,9 @@
 defmodule Membrane.WebRTC.Extension.TWCC do
-  @moduledoc false
+  @moduledoc """
+  Module implementing `Membrane.WebRTC.Extension` behaviour for Transport-wide Congestion Control RTP Header extension.
+
+  This extension is described at https://datatracker.ietf.org/doc/html/draft-holmer-rmcat-transport-wide-cc-extensions-01.
+  """
   @behaviour Membrane.WebRTC.Extension
 
   alias ExSDP.Media
