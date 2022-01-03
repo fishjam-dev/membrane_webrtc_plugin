@@ -188,6 +188,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             filter_codecs: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
             extensions: [Extension.t()],
             integrated_turn_servers: [any()],
+            component_path: String.t(),
             ice: %{
               restarting?: boolean(),
               waiting_restart?: boolean(),
@@ -210,6 +211,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               filter_codecs: &SDP.filter_mappings(&1),
               extensions: [],
               integrated_turn_servers: [],
+              component_path: "",
               ice: %{
                 restarting?: false,
                 waiting_restart?: false,
@@ -285,6 +287,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         filter_codecs: opts.filter_codecs,
         extensions: opts.extensions,
         integrated_turn_servers: [],
+        component_path: Membrane.ComponentPath.get_formatted(),
         ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil, first?: true}
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -619,7 +622,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.other.add_tracks", include: [[:state, :id]])
+  @decorate trace("endpoint_bin.other.add_tracks",
+              include: [[:state, :component_path], [:state, :id]]
+            )
   def handle_other({:add_tracks, tracks}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
