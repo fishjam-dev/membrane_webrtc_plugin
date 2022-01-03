@@ -17,6 +17,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
+  alias Membrane.TURN
   alias Membrane.ICE
   alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
   require OpenTelemetry.Tracer, as: Tracer
@@ -106,7 +107,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 description: "Logger metadata used for endpoint bin and all its descendants"
               ],
               integrated_turn_options: [
-                spec: [ICE.Bin.integrated_turn_options_t()],
+                spec: [TURN.Endpoint.integrated_turn_options_t()],
                 default: [use_integrated_turn: false],
                 description: "Integrated TURN Options"
               ],
@@ -193,7 +194,8 @@ defmodule Membrane.WebRTC.EndpointBin do
               waiting_restart?: boolean(),
               pwd: nil | String.t(),
               ufrag: nil | String.t(),
-              first?: boolean
+              first?: boolean(),
+              ice_lite?: boolean()
             }
           }
 
@@ -215,7 +217,8 @@ defmodule Membrane.WebRTC.EndpointBin do
                 waiting_restart?: false,
                 pwd: nil,
                 ufrag: nil,
-                first?: true
+                first?: true,
+                ice_lite?: false
               }
   end
 
@@ -230,16 +233,28 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     create_or_join_otel_context(opts, trace_metadata)
 
+    ice_impl =
+      if opts.integrated_turn_options[:use_integrated_turn] do
+        %TURN.Endpoint{
+          integrated_turn_options: opts.integrated_turn_options,
+          handshake_module: Membrane.DTLS.Handshake,
+          handshake_opts: opts.handshake_opts
+        }
+      else
+        %ICE.Bin{
+          stun_servers: opts.stun_servers,
+          turn_servers: opts.turn_servers,
+          port_range: opts.port_range,
+          controlling_mode: true,
+          handshake_module: Membrane.DTLS.Handshake,
+          handshake_opts: opts.handshake_opts
+        }
+      end
+
+    ice_lite? = if opts.integrated_turn_options[:use_integrated_turn], do: true, else: false
+
     children = %{
-      ice: %ICE.Bin{
-        stun_servers: opts.stun_servers,
-        integrated_turn_options: opts.integrated_turn_options,
-        turn_servers: opts.turn_servers,
-        port_range: opts.port_range,
-        controlling_mode: true,
-        handshake_module: Membrane.DTLS.Handshake,
-        handshake_opts: opts.handshake_opts
-      },
+      ice: ice_impl,
       rtp: %Membrane.RTP.SessionBin{
         secure?: true,
         rtcp_receiver_report_interval: opts.rtcp_receiver_report_interval,
@@ -285,7 +300,14 @@ defmodule Membrane.WebRTC.EndpointBin do
         filter_codecs: opts.filter_codecs,
         extensions: opts.extensions,
         integrated_turn_servers: [],
-        ice: %{restarting?: false, waiting_restart?: false, pwd: nil, ufrag: nil, first?: true}
+        ice: %{
+          restarting?: false,
+          waiting_restart?: false,
+          pwd: nil,
+          ufrag: nil,
+          first?: true,
+          ice_lite?: ice_lite?
+        }
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
@@ -561,7 +583,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
-        extensions: state.extensions
+        extensions: state.extensions,
+        ice_lite: state.ice.ice_lite?
       )
 
     {actions, state} =
