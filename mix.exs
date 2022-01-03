@@ -57,6 +57,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
        override: true},
       {:membrane_turn_plugin,
        github: "membraneframework/membrane_turn_plugin", branch: "turn-endpoint"},
+      {:membrane_rtp_plugin, "~> 0.11.0"},
       {:ex_libsrtp, "~> 0.3.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.2.0"},
       {:membrane_rtp_opus_plugin, "~> 0.4.0"},
