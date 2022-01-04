@@ -255,7 +255,13 @@ defmodule Membrane.WebRTC.SDP do
       %{track | mid: mappings.mid, status: :disabled}
     else
       {rtp, fmtp} = mapping
-      %{track | mid: mappings.mid, rtp_mapping: rtp, fmtp: fmtp}
+
+      extmaps =
+        Enum.filter(mappings.extmaps, fn extmap ->
+          Enum.any?(track.extmaps, &(&1.uri == extmap.uri))
+        end)
+
+      %{track | mid: mappings.mid, rtp_mapping: rtp, fmtp: fmtp, extmaps: extmaps}
     end
   end
 
@@ -276,6 +282,7 @@ defmodule Membrane.WebRTC.SDP do
     pt_to_fmtp = Map.new(fmtp_mappings, &{&1.pt, &1})
     rtp_fmtp_pairs = Enum.map(rtp_mappings, &{&1, Map.get(pt_to_fmtp, &1.payload_type)})
     new_rtp_fmtp_pairs = Enum.filter(rtp_fmtp_pairs, codecs_filter)
+    extmaps = Media.get_attributes(sdp_media, :extmap)
 
     if new_rtp_fmtp_pairs === [] do
       raise "All payload types in SDP offer are unsupported"
@@ -284,7 +291,8 @@ defmodule Membrane.WebRTC.SDP do
         rtp_fmtp_mappings: new_rtp_fmtp_pairs,
         mid: mid,
         media_type: media_type,
-        disabled?: disabled?
+        disabled?: disabled?,
+        extmaps: extmaps
       }
     end
   end
@@ -305,10 +313,11 @@ defmodule Membrane.WebRTC.SDP do
     sort_mid = &if &1.mid != nil, do: String.to_integer(&1.mid), else: nil
 
     media_data =
-      Enum.filter(media_data, &(&1.media_type === type))
+      media_data
+      |> Enum.filter(&(&1.media_type === type))
       |> Enum.sort_by(sort_mid)
 
-    tracks = Enum.filter(tracks, &(&1.type === type)) |> Enum.sort_by(sort_mid)
+    tracks = tracks |> Enum.filter(&(&1.type === type)) |> Enum.sort_by(sort_mid)
 
     Enum.zip(media_data, tracks)
     |> Map.new(fn {media, track} ->
