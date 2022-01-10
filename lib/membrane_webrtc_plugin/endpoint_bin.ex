@@ -243,7 +243,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       if opts.use_integrated_turn do
         %ICE.Endpoint{
           integrated_turn_options: opts.integrated_turn_options,
-          handshake_module: Membrane.DTLS.Handshake,
           handshake_opts: opts.handshake_opts
         }
       else
