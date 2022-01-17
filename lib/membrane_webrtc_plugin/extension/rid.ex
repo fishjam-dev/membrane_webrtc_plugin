@@ -8,9 +8,13 @@ defmodule Membrane.WebRTC.Extension.Rid do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.Extmap
+  alias Membrane.WebRTC.Extension
 
   @name :rid
   @uri "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id"
+
+  @impl true
+  def new(opts \\ Keyword.new()), do: %Extension{module: __MODULE__, rtp_opts: opts}
 
   @impl true
   def compatible?(_encoding), do: true
@@ -25,7 +29,7 @@ defmodule Membrane.WebRTC.Extension.Rid do
   # for the whole session mid for same buffer will be the same.
   # It is used only in handler for `:new_rtp_stream` notification.
   @impl true
-  def get_rtp_module(_rid_id), do: :no_rtp_module
+  def get_rtp_module(_rid_id, _opts), do: :no_rtp_module
 
   @impl true
   def add_to_media(media, id, _direction, _payload_types),

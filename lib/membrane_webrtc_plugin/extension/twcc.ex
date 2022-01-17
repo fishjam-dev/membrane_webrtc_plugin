@@ -8,10 +8,14 @@ defmodule Membrane.WebRTC.Extension.TWCC do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.Extmap
+  alias Membrane.WebRTC.Extension
 
   @name :twcc
   @uri "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
   @rtp_module Membrane.RTP.TWCCReceiver
+
+  @impl true
+  def new(opts \\ Keyword.new()), do: %Extension{module: __MODULE__, rtp_opts: opts}
 
   @impl true
   def compatible?(_encoding), do: true
@@ -23,7 +27,7 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   def get_uri(), do: @uri
 
   @impl true
-  def get_rtp_module(twcc_id), do: %@rtp_module{twcc_id: twcc_id}
+  def get_rtp_module(twcc_id, _rtp_opts), do: %@rtp_module{twcc_id: twcc_id}
 
   @impl true
   def add_to_media(media, id, _direction, payload_types) do
