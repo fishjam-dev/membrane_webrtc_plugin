@@ -26,7 +26,8 @@ defmodule Membrane.WebRTC.SDP do
           fingerprint: fingerprint(),
           extensions: [Extension.t()],
           inbound_tracks: [Track.t()],
-          outbound_tracks: [Track.t()]
+          outbound_tracks: [Track.t()],
+          ice_lite?: boolean()
         ) :: ExSDP.t()
   def create_answer(opts) do
     inbound_tracks = Keyword.fetch!(opts, :inbound_tracks) |> filter_simulcast_tracks()
@@ -47,9 +48,9 @@ defmodule Membrane.WebRTC.SDP do
       }
     }
 
-    attributes = [
-      %Group{semantics: "BUNDLE", mids: mids}
-    ]
+    attributes =
+      [%Group{semantics: "BUNDLE", mids: mids}] ++
+        if Keyword.get(opts, :ice_lite?), do: [:ice_lite], else: []
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
     |> ExSDP.add_attributes(attributes)
