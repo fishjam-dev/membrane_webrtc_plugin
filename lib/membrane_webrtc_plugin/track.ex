@@ -4,7 +4,18 @@ defmodule Membrane.WebRTC.Track do
   """
   alias ExSDP.Attribute.{RTPMapping, FMTP, Extmap}
 
-  @enforce_keys [:type, :stream_id, :id, :name, :mid, :rtp_mapping, :fmtp, :status, :extmaps]
+  @enforce_keys [
+    :type,
+    :stream_id,
+    :id,
+    :name,
+    :mid,
+    :rids,
+    :rtp_mapping,
+    :fmtp,
+    :status,
+    :extmaps
+  ]
   defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
 
   @type id :: String.t()
@@ -15,10 +26,11 @@ defmodule Membrane.WebRTC.Track do
           stream_id: String.t(),
           id: id,
           name: String.t(),
-          ssrc: RTP.ssrc_t(),
+          ssrc: RTP.ssrc_t() | binary(),
           encoding: encoding,
           status: :pending | :ready | :linked | :disabled,
           mid: non_neg_integer(),
+          rids: [String.t()],
           rtp_mapping: RTPMapping,
           fmtp: FMTP,
           extmaps: [Extmap]
@@ -33,9 +45,10 @@ defmodule Membrane.WebRTC.Track do
   @spec new(:audio | :video, stream_id :: String.t(),
           id: String.t(),
           name: String.t(),
-          ssrc: RTP.ssrc_t(),
+          ssrc: RTP.ssrc_t() | :simulcast,
           encoding: encoding,
           mid: non_neg_integer(),
+          rids: [String.t()],
           rtp_mapping: RTPMapping,
           status: :pending | :ready | :linked | :disabled,
           fmtp: FMTP,
@@ -54,6 +67,7 @@ defmodule Membrane.WebRTC.Track do
       encoding: Keyword.get(opts, :encoding),
       rtp_mapping: Keyword.get(opts, :rtp_mapping),
       mid: Keyword.get(opts, :mid),
+      rids: Keyword.get(opts, :rids),
       status: Keyword.get(opts, :status, :ready),
       fmtp: Keyword.get(opts, :fmtp),
       extmaps: Keyword.get(opts, :extmaps, [])

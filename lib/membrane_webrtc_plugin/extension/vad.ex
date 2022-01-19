@@ -1,5 +1,9 @@
 defmodule Membrane.WebRTC.Extension.VAD do
-  @moduledoc false
+  @moduledoc """
+  Module implementing `Membrane.WebRTC.Extension` behaviour for Client-to-Mixer Audio Level Indication RTP Header extension.
+
+  This extension is described in RFC 6464.
+  """
   @behaviour Membrane.WebRTC.Extension
 
   alias ExSDP.Media
