@@ -26,12 +26,9 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   def get_rtp_module(twcc_id), do: %@rtp_module{twcc_id: twcc_id}
 
   @impl true
-  def add_to_media(media, _extmap, :sendonly, _payload_types), do: media
-
-  @impl true
   def add_to_media(media, id, _direction, payload_types) do
     media
-    |> Media.add_attribute(%Extmap{id: id, uri: @uri, direction: :recvonly})
+    |> Media.add_attribute(%Extmap{id: id, uri: @uri})
     |> Media.add_attributes(Enum.map(payload_types, &"rtcp-fb:#{&1} transport-cc"))
   end
 end
