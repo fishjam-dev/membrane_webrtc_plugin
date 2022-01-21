@@ -304,7 +304,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
         extensions: opts.extensions,
-        integrated_turn_servers: [],
+        integrated_turn_servers: ICE.TURNManager.get_launched_turn_servers(),
         component_path: Membrane.ComponentPath.get_formatted(),
         ice: %{
           restarting?: false,
@@ -582,8 +582,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   @decorate trace("endpoint_bin.notification.integrated_turn_servers",
               include: [[:state, :id]]
             )
-  def handle_notification({:integrated_turn_servers, turns}, _from, _ctx, state) do
-    state = Map.put(state, :integrated_turn_servers, turns)
+  def handle_notification({:udp_integrated_turn, turn}, _from, _ctx, state) do
+    state = %{state | integrated_turn_servers: [turn] ++ state.integrated_turn_servers}
     {:ok, state}
   end
 
