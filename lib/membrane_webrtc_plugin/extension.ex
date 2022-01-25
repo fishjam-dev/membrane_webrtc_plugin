@@ -7,8 +7,8 @@ defmodule Membrane.WebRTC.Extension do
   alias ExSDP.Attribute.{FMTP, Extmap}
   alias Membrane.{RTP, WebRTC}
 
-  defstruct module: __MODULE__,
-            rtp_opts: Keyword.new()
+  @enforce_keys [:module]
+  defstruct @enforce_keys ++ [rtp_opts: Keyword.new()]
 
   @type t :: %__MODULE__{
           module: module(),
@@ -17,7 +17,7 @@ defmodule Membrane.WebRTC.Extension do
   @type maybe_t :: t() | :not_supported
 
   @doc """
-  Create a `__MODULE__` struct for specific extension.
+  Creates a `#{inspect(__MODULE__)}` struct for a specific extension.
   """
   @callback new(opts :: Keyword.t()) :: t()
 

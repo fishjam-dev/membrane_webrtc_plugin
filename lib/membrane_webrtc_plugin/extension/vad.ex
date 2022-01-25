@@ -30,7 +30,7 @@ defmodule Membrane.WebRTC.Extension.VAD do
   @impl true
   def get_rtp_module(vad_id, rtp_opts) do
     rtp_opts = Map.new(rtp_opts)
-    Map.merge(%@rtp_module{vad_id: vad_id}, rtp_opts)
+    struct!(@rtp_module, [{:vad_id, vad_id} | rtp_opts])
   end
 
   @impl true
