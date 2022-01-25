@@ -114,16 +114,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: [TURN.Endpoint.integrated_turn_options_t()],
                 default: [],
                 description: "Integrated TURN Options"
-              ],
-              trace_metadata: [
-                spec: :list,
-                default: [],
-                description: "A list of tuples to merge into Otel spans"
-              ],
-              trace_context: [
-                spec: :list | any(),
-                default: [],
-                description: "Trace context for otel propagation"
               ]
 
   def_input_pad :input,
@@ -230,15 +220,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_init(opts) do
-    trace_metadata =
-      Keyword.merge(opts.trace_metadata, [
-        {:"library.language", :erlang},
-        {:"library.name", :membrane_webrtc_plugin},
-        {:"library.version", "semver:#{Application.spec(:membrane_webrtc_plugin, :vsn)}"}
-      ])
-
-    create_or_join_otel_context(opts, trace_metadata)
-
     ice_impl =
       if opts.use_integrated_turn do
         %ICE.Endpoint{
@@ -292,8 +273,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state =
       %State{
-        id: Keyword.get(trace_metadata, :name, "endpointBin"),
-        trace_metadata: trace_metadata,
         log_metadata: opts.log_metadata,
         inbound_tracks: %{},
         outbound_tracks: %{},
@@ -740,6 +719,21 @@ defmodule Membrane.WebRTC.EndpointBin do
     {{:ok, forward: {{:track_filter, track_id}, :disable_track}}, state}
   end
 
+  @impl true
+  def handle_other({:trace_context, trace_ctx, trace_metadata}, _ctx, state) do
+    trace_metadata =
+      Keyword.merge(trace_metadata, [
+        {:"library.language", :erlang},
+        {:"library.name", :membrane_webrtc_plugin},
+        {:"library.version", "semver:#{Application.spec(:membrane_webrtc_plugin, :vsn)}"}
+      ])
+
+    id = Keyword.get(trace_metadata, :name, "endpointBin")
+
+    create_or_join_otel_context(trace_ctx, trace_metadata)
+    {:ok, %{state | id: id, trace_metadata: trace_metadata}}
+  end
+
   defp maybe_restart_ice(state, set_waiting_restart? \\ false) do
     state =
       if set_waiting_restart?,
@@ -871,8 +865,8 @@ defmodule Membrane.WebRTC.EndpointBin do
     end
   end
 
-  defp create_or_join_otel_context(opts, trace_metadata) do
-    case opts.trace_context do
+  defp create_or_join_otel_context(trace_context, trace_metadata) do
+    case trace_context do
       [] ->
         root_span = Tracer.start_span("endpoint_bin")
         parent_ctx = Tracer.set_current_span(root_span)
