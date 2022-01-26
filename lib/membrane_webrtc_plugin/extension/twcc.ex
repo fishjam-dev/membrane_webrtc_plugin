@@ -15,16 +15,11 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   @rtp_module Membrane.RTP.TWCCReceiver
 
   @impl true
-  def new(opts \\ Keyword.new()), do: %Extension{module: __MODULE__, rtp_opts: opts}
+  def new(opts \\ Keyword.new()),
+    do: %Extension{module: __MODULE__, rtp_opts: opts, uri: @uri, name: @name}
 
   @impl true
   def compatible?(_encoding), do: true
-
-  @impl true
-  def get_name(), do: @name
-
-  @impl true
-  def get_uri(), do: @uri
 
   @impl true
   def get_rtp_module(twcc_id, _rtp_opts), do: %@rtp_module{twcc_id: twcc_id}

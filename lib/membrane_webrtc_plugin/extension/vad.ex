@@ -16,16 +16,11 @@ defmodule Membrane.WebRTC.Extension.VAD do
   @rtp_module Membrane.RTP.VAD
 
   @impl true
-  def new(opts \\ Keyword.new()), do: %Extension{module: __MODULE__, rtp_opts: opts}
+  def new(opts \\ Keyword.new()),
+    do: %Extension{module: __MODULE__, rtp_opts: opts, uri: @uri, name: @name}
 
   @impl true
   def compatible?(encoding), do: encoding == :OPUS
-
-  @impl true
-  def get_name(), do: @name
-
-  @impl true
-  def get_uri(), do: @uri
 
   @impl true
   def get_rtp_module(vad_id, rtp_opts) do

@@ -13,16 +13,16 @@ defmodule Membrane.WebRTC.Extension.Mid do
   @uri "urn:ietf:params:rtp-hdrext:sdes:mid"
 
   @impl true
-  def new(opts \\ Keyword.new()), do: %Extension{module: __MODULE__, rtp_opts: opts}
+  def new(opts \\ Keyword.new()),
+    do: %Extension{
+      module: __MODULE__,
+      rtp_opts: opts,
+      uri: @uri,
+      name: @name
+    }
 
   @impl true
   def compatible?(_encoding), do: true
-
-  @impl true
-  def get_name(), do: @name
-
-  @impl true
-  def get_uri(), do: @uri
 
   # there is no module parsing RTP headers against this extension as
   # for the whole session mid for same buffer will be the same.
