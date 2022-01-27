@@ -2,13 +2,6 @@ defmodule Membrane.WebRTC.Extension do
   @moduledoc """
   A module that provides mappings between `ExSDP.Attribute.Extmap` and modules implementing
   `Membrane.WebRTC.Extension` behaviour.
-
-  This struct contains:
-    * module - extension specific module which implement `Membrane.WebRTC.Extension` behaviour
-    * rtp_opts - options for RTP module. This allows configuring RTP module to your needs
-    * uri - a URI that identifies extension in SDP
-    * name - an atom identifying the extension in `Membrane.RTP.SessionBin`
-
   """
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, Extmap}
@@ -17,6 +10,12 @@ defmodule Membrane.WebRTC.Extension do
   @enforce_keys [:module, :uri, :name]
   defstruct @enforce_keys ++ [rtp_opts: Keyword.new()]
 
+  @typedoc """
+    * module - extension specific module which implement `Membrane.WebRTC.Extension` behaviour
+    * rtp_opts - options for RTP module. This allows configuring RTP module to your needs
+    * uri - a URI that identifies extension in SDP
+    * name - an atom identifying the extension in `Membrane.RTP.SessionBin`
+  """
   @type t :: %__MODULE__{
           module: module(),
           rtp_opts: Keyword.t(),
