@@ -620,6 +620,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_lite: state.ice.ice_lite?
       )
 
+    IO.inspect(state.ice.ice_lite?, label: "ICE LITE")
+
     {actions, state} =
       withl tracks_check: true <- state.inbound_tracks != %{} or outbound_tracks != %{},
             candidate_gathering_check: nil <- state.candidate_gathering_state do
