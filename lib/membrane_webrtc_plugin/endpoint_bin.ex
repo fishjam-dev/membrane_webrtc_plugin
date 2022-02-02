@@ -617,7 +617,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
         extensions: state.extensions,
-        ice_lite: state.ice.ice_lite?
+        ice_lite?: state.ice.ice_lite?
       )
 
     IO.inspect(state.ice.ice_lite?, label: "ICE LITE")
