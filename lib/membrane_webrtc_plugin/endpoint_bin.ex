@@ -549,6 +549,9 @@ defmodule Membrane.WebRTC.EndpointBin do
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when state.ice.restarting? do
+        IO.inspect(state.id, label: "Connection ready ICE RESTARTING")
+
+
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
     new_outbound_tracks =
@@ -574,6 +577,8 @@ defmodule Membrane.WebRTC.EndpointBin do
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when not state.ice.restarting? do
+        IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
+
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
   end
@@ -755,6 +760,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
       state = %{state | outbound_tracks: outbound_tracks}
 
+      IO.inspect(state.id, label: "Restart stream")
       {[forward: {:ice, :restart_stream}], state}
     else
       {[], state}
