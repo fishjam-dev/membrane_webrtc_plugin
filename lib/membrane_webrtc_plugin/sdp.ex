@@ -71,15 +71,6 @@ defmodule Membrane.WebRTC.SDP do
     |> Enum.map(fn {_mid, track} -> track end)
   end
 
-  defp encoding_name_to_string(encoding_name) do
-    case(encoding_name) do
-      :VP8 -> "VP8"
-      :H264 -> "H264"
-      :OPUS -> "opus"
-      x -> to_string(x)
-    end
-  end
-
   defp add_tracks(sdp, inbound_tracks, outbound_tracks, config) do
     inbound_media = Enum.map(inbound_tracks, &create_sdp_media(&1, :recvonly, config))
     outbound_media = Enum.map(outbound_tracks, &create_sdp_media(&1, :sendonly, config))
@@ -167,6 +158,15 @@ defmodule Membrane.WebRTC.SDP do
 
   Function returns four-element tuple, which contains list of new tracks, list of removed tracks, list of all inbound tracks
   and list of all outbound tracks.
+
+  Function arguments:
+  * sdp - SDP offer
+  * codecs_filter - function which will filter SDP m-line by codecs
+  * enabled_extensions - list of WebRTC extensions that should be enabled for tracks
+  * old_inbound_tracks - list of old inbound tracks
+  * outbound_tracks - list of outbound_tracks
+  * mid_to_track_id - map of mid to track_id for all active inbound_tracks
+
   """
   @spec get_tracks(
           sdp :: ExSDP.t(),
@@ -174,7 +174,7 @@ defmodule Membrane.WebRTC.SDP do
           enabled_extensions :: [Extension.t()],
           old_inbound_tracks :: [Track.t()],
           outbound_tracks :: [Track.t()],
-          mid_to_track_id :: %{}
+          mid_to_track_id :: %{String.t() => Track.id()}
         ) ::
           {new_inbound_tracks :: [Track.t()], removed_inbound_tracks :: [Track.t()],
            inbound_tracks :: [Track.t()], outbound_tracks :: [Track.t()]}
@@ -239,28 +239,6 @@ defmodule Membrane.WebRTC.SDP do
     Enum.map(media, &get_mid_type_mappings_from_sdp_media(&1, codecs_filter))
   end
 
-  defp update_mapping_and_mid_for_track(track, mappings) do
-    encoding_string = encoding_name_to_string(track.encoding)
-
-    mapping =
-      Enum.find(mappings.rtp_fmtp_mappings, fn {rtp, _fmtp} ->
-        rtp.encoding === encoding_string
-      end)
-
-    if mapping === nil do
-      %{track | mid: mappings.mid, status: :disabled}
-    else
-      {rtp, fmtp} = mapping
-
-      extmaps =
-        Enum.filter(mappings.extmaps, fn extmap ->
-          Enum.any?(track.extmaps, &(&1.uri == extmap.uri))
-        end)
-
-      %{track | mid: mappings.mid, rtp_mapping: rtp, fmtp: fmtp, extmaps: extmaps}
-    end
-  end
-
   defp get_new_tracks(inbound_tracks, old_inbound_tracks) do
     known_ids = Enum.map(old_inbound_tracks, fn track -> track.id end)
     Enum.filter(inbound_tracks, &(&1.id not in known_ids))
@@ -319,6 +297,37 @@ defmodule Membrane.WebRTC.SDP do
     |> Map.new(fn {media, track} ->
       {track.id, update_mapping_and_mid_for_track(track, media)}
     end)
+  end
+
+  defp update_mapping_and_mid_for_track(track, mappings) do
+    encoding_string = encoding_name_to_string(track.encoding)
+
+    mapping =
+      Enum.find(mappings.rtp_fmtp_mappings, fn {rtp, _fmtp} ->
+        rtp.encoding === encoding_string
+      end)
+
+    if mapping === nil do
+      %{track | mid: mappings.mid, status: :disabled}
+    else
+      {rtp, fmtp} = mapping
+
+      extmaps =
+        Enum.filter(mappings.extmaps, fn extmap ->
+          Enum.any?(track.extmaps, &(&1.uri == extmap.uri))
+        end)
+
+      %{track | mid: mappings.mid, rtp_mapping: rtp, fmtp: fmtp, extmaps: extmaps}
+    end
+  end
+
+  defp encoding_name_to_string(encoding_name) do
+    case(encoding_name) do
+      :VP8 -> "VP8"
+      :H264 -> "H264"
+      :OPUS -> "opus"
+      x -> to_string(x)
+    end
   end
 
   defp create_track_from_sdp_media(
