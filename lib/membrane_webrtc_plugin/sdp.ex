@@ -387,7 +387,7 @@ defmodule Membrane.WebRTC.SDP do
         extension_name =
           Enum.find(track.extmaps, &(&1.id == extension.identifier))
           |> then(&Extension.from_extmap(modules, &1))
-          |> then(& &1.get_name())
+          |> then(& &1.name)
 
         {extension_name, extension.data}
       end)

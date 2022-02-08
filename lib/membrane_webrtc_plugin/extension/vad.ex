@@ -8,6 +8,7 @@ defmodule Membrane.WebRTC.Extension.VAD do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.Extmap
+  alias Membrane.WebRTC.Extension
 
   @name :vad
   @uri "urn:ietf:params:rtp-hdrext:ssrc-audio-level"
@@ -15,16 +16,16 @@ defmodule Membrane.WebRTC.Extension.VAD do
   @rtp_module Membrane.RTP.VAD
 
   @impl true
+  def new(opts \\ Keyword.new()),
+    do: %Extension{module: __MODULE__, rtp_opts: opts, uri: @uri, name: @name}
+
+  @impl true
   def compatible?(encoding), do: encoding == :OPUS
 
   @impl true
-  def get_name(), do: @name
-
-  @impl true
-  def get_uri(), do: @uri
-
-  @impl true
-  def get_rtp_module(vad_id), do: %@rtp_module{vad_id: vad_id}
+  def get_rtp_module(vad_id, rtp_opts) do
+    struct!(@rtp_module, [{:vad_id, vad_id} | rtp_opts])
+  end
 
   @impl true
   def add_to_media(media, id, _direction, _pt),

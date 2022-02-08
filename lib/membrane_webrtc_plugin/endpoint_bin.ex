@@ -303,7 +303,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
-        extensions: opts.extensions,
+        extensions: Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new())),
         integrated_turn_servers: [],
         component_path: Membrane.ComponentPath.get_formatted(),
         ice: %{
