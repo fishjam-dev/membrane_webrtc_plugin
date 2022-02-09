@@ -52,13 +52,9 @@ defmodule Membrane.WebRTC.SDP do
       [%Group{semantics: "BUNDLE", mids: mids}] ++
         if Keyword.get(opts, :ice_lite?), do: [:ice_lite], else: []
 
-    # IO.inspect(attributes, label: "SDP attributes ")
-
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
     |> ExSDP.add_attributes(attributes)
     |> add_tracks(inbound_tracks, outbound_tracks, config)
-
-    # |> IO.inspect(label: "SDP Answer")
   end
 
   @doc """

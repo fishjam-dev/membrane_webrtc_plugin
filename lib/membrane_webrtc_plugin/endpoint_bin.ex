@@ -549,8 +549,6 @@ defmodule Membrane.WebRTC.EndpointBin do
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when state.ice.restarting? do
-    IO.inspect(state.id, label: "Connection ready ICE RESTARTING")
-
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
     new_outbound_tracks =
@@ -576,20 +574,16 @@ defmodule Membrane.WebRTC.EndpointBin do
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when not state.ice.restarting? and not state.ice.ice_lite? do
-    IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
-
-    {action, state} = maybe_restart_ice(state, true)
-    {{:ok, action}, state}
+    {actions, state} = maybe_restart_ice(state, true)
+    {{:ok, actions}, state}
   end
 
   @impl true
   @decorate trace("endpoint_bin.notification.connection_ready",
               include: [[:state, :ice, :restarting?], [:state, :id]]
             )
-  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state) do
-    IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
-    {:ok, state}
-  end
+  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state),
+    do: {:ok, state}
 
   @impl true
   @decorate trace("endpoint_bin.notification.integrated_turn_servers",
@@ -632,8 +626,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         extensions: state.extensions,
         ice_lite?: state.ice.ice_lite?
       )
-
-    IO.inspect(state.ice.ice_lite?, label: "ICE LITE")
 
     {actions, state} =
       withl tracks_check: true <- state.inbound_tracks != %{} or outbound_tracks != %{},
@@ -764,12 +756,9 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     if not state.ice.restarting? and state.ice.waiting_restart? do
       state = %{state | ice: %{state.ice | restarting?: true, waiting_restart?: false}}
-
       outbound_tracks = change_tracks_status(state, :pending, :ready)
-
       state = %{state | outbound_tracks: outbound_tracks}
 
-      IO.inspect(state.id, label: "Restart stream")
       {[forward: {:ice, :restart_stream}], state}
     else
       {[], state}
