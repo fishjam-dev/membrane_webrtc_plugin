@@ -549,8 +549,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when state.ice.restarting? do
-        IO.inspect(state.id, label: "Connection ready ICE RESTARTING")
-
+    IO.inspect(state.id, label: "Connection ready ICE RESTARTING")
 
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
@@ -577,7 +576,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when not state.ice.restarting? do
-        IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
+    IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
 
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
@@ -648,7 +647,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       link_notify ++
         [notify: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
-        actions
+        actions ++
+        if(state.ice.ice_lite?, do: [forward: {:ice, :sdp_offer_arrived}], else: [])
 
     {{:ok, actions}, state}
   end
