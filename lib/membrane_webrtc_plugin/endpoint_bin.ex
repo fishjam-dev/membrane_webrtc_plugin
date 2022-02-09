@@ -575,11 +575,20 @@ defmodule Membrane.WebRTC.EndpointBin do
               include: [[:state, :ice, :restarting?], [:state, :id]]
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
-      when not state.ice.restarting? do
+      when not state.ice.restarting? and not state.ice.ice_lite? do
     IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
 
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
+  end
+
+  @impl true
+  @decorate trace("endpoint_bin.notification.connection_ready",
+              include: [[:state, :ice, :restarting?], [:state, :id]]
+            )
+  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state) do
+    IO.inspect(state.id, label: "Connection ready ICE NOT RESTARTING")
+    {:ok, state}
   end
 
   @impl true
