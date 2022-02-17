@@ -648,8 +648,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       link_notify ++
         [notify: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
-        actions ++
-        if(state.ice.ice_lite?, do: [forward: {:ice, :sdp_offer_arrived}], else: [])
+        actions
 
     {{:ok, actions}, state}
   end
