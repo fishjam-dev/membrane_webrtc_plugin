@@ -7,8 +7,27 @@ defmodule Membrane.WebRTC.Extension do
   alias ExSDP.Attribute.{FMTP, Extmap}
   alias Membrane.{RTP, WebRTC}
 
-  @type t :: module()
+  @enforce_keys [:module, :uri, :name]
+  defstruct @enforce_keys ++ [rtp_opts: Keyword.new()]
+
+  @typedoc """
+    * module - extension specific module which implement `Membrane.WebRTC.Extension` behaviour
+    * rtp_opts - options for RTP module. This allows configuring RTP module to your needs
+    * uri - a URI that identifies extension in SDP
+    * name - an atom identifying the extension in `Membrane.RTP.SessionBin`
+  """
+  @type t :: %__MODULE__{
+          module: module(),
+          rtp_opts: Keyword.t(),
+          uri: String.t(),
+          name: atom()
+        }
   @type maybe_t :: t() | :not_supported
+
+  @doc """
+  Creates a `#{inspect(__MODULE__)}` struct for a specific extension.
+  """
+  @callback new(opts :: Keyword.t()) :: t()
 
   @doc """
   Returns a boolean indicating whether an extension is compatible with given encoding.
@@ -16,20 +35,10 @@ defmodule Membrane.WebRTC.Extension do
   @callback compatible?(WebRTC.Track.encoding()) :: boolean()
 
   @doc """
-  Returns an atom identifying the extension in `Membrane.RTP.SessionBin`.
-  """
-  @callback get_name() :: RTP.SessionBin.rtp_extension_name_t()
-
-  @doc """
-  Returns a URI that identifies extension in SDP.
-  """
-  @callback get_uri() :: String.t()
-
-  @doc """
   Returns a module that implements the extension in `Membrane.RTP.SessionBin` or `:no_rtp_module` if such
   such module would only forward buffers to next element.
   """
-  @callback get_rtp_module(Extmap.extension_id()) ::
+  @callback get_rtp_module(Extmap.extension_id(), Keyword.t()) ::
               Membrane.ParentSpec.child_spec_t() | :no_rtp_module
 
   @doc """
@@ -49,7 +58,7 @@ defmodule Membrane.WebRTC.Extension do
   """
   @spec supported?([t()], Extmap.t(), atom()) :: boolean()
   def supported?(extensions, %Extmap{uri: uri}, encoding),
-    do: Enum.any?(extensions, &(&1.get_uri() == uri and &1.compatible?(encoding)))
+    do: Enum.any?(extensions, &(&1.uri == uri and &1.module.compatible?(encoding)))
 
   @doc """
   Given a list of supported extensions, returns an extension that corresponds to given `Extmap`
@@ -57,7 +66,7 @@ defmodule Membrane.WebRTC.Extension do
   """
   @spec from_extmap([t()], Extmap.t()) :: maybe_t()
   def from_extmap(extensions, %Extmap{uri: uri}),
-    do: Enum.find(extensions, :not_supported, &(&1.get_uri() == uri))
+    do: Enum.find(extensions, :not_supported, &(&1.uri == uri))
 
   @doc """
   Given an SDP media, a list of supported extensions and supported `Extmap`s, adds corresponding
@@ -71,7 +80,7 @@ defmodule Membrane.WebRTC.Extension do
     extension = from_extmap(extensions, extmap)
 
     media
-    |> extension.add_to_media(extmap.id, direction, payload_types)
+    |> extension.module.add_to_media(extmap.id, direction, payload_types)
     |> add_to_media(extensions, rest, direction, payload_types)
   end
 
@@ -81,7 +90,7 @@ defmodule Membrane.WebRTC.Extension do
   @spec as_rtp_extension([t()], Extmap.t()) :: RTP.SessionBin.rtp_extension_options_t()
   def as_rtp_extension(extensions, extmap) do
     extension = from_extmap(extensions, extmap)
-    {extension.get_name(), extension.get_rtp_module(extmap.id)}
+    {extension.name, extension.module.get_rtp_module(extmap.id, extension.rtp_opts)}
   end
 
   @doc """
@@ -92,6 +101,6 @@ defmodule Membrane.WebRTC.Extension do
           {RTP.SessionBin.rtp_extension_name_t(), Extmap.extension_id()}
   def as_rtp_mapping(extensions, extmap) do
     extension = from_extmap(extensions, extmap)
-    {extension.get_name(), extmap.id}
+    {extension.name, extmap.id}
   end
 end
