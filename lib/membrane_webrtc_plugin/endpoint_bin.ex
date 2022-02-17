@@ -303,8 +303,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         dtls_fingerprint: nil,
         ssrc_to_track_id: %{},
         filter_codecs: opts.filter_codecs,
+        integrated_turn_servers: ICE.TURNManager.get_launched_turn_servers(),
         extensions: Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new())),
-        integrated_turn_servers: [],
         component_path: Membrane.ComponentPath.get_formatted(),
         ice: %{
           restarting?: false,
@@ -573,17 +573,24 @@ defmodule Membrane.WebRTC.EndpointBin do
               include: [[:state, :ice, :restarting?], [:state, :id]]
             )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
-      when not state.ice.restarting? do
-    {action, state} = maybe_restart_ice(state, true)
-    {{:ok, action}, state}
+      when not state.ice.restarting? and not state.ice.ice_lite? do
+    {actions, state} = maybe_restart_ice(state, true)
+    {{:ok, actions}, state}
   end
+
+  @impl true
+  @decorate trace("endpoint_bin.notification.connection_ready",
+              include: [[:state, :ice, :restarting?], [:state, :id]]
+            )
+  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state),
+    do: {:ok, state}
 
   @impl true
   @decorate trace("endpoint_bin.notification.integrated_turn_servers",
               include: [[:state, :id]]
             )
-  def handle_notification({:integrated_turn_servers, turns}, _from, _ctx, state) do
-    state = Map.put(state, :integrated_turn_servers, turns)
+  def handle_notification({:udp_integrated_turn, turn}, _from, _ctx, state) do
+    state = %{state | integrated_turn_servers: [turn] ++ state.integrated_turn_servers}
     {:ok, state}
   end
 
@@ -617,7 +624,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
         extensions: state.extensions,
-        ice_lite: state.ice.ice_lite?
+        ice_lite?: state.ice.ice_lite?
       )
 
     {actions, state} =
@@ -748,9 +755,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     if not state.ice.restarting? and state.ice.waiting_restart? do
       state = %{state | ice: %{state.ice | restarting?: true, waiting_restart?: false}}
-
       outbound_tracks = change_tracks_status(state, :pending, :ready)
-
       state = %{state | outbound_tracks: outbound_tracks}
 
       {[forward: {:ice, :restart_stream}], state}
