@@ -179,6 +179,14 @@ defmodule Membrane.WebRTC.EndpointBin do
     @moduledoc false
     use Bunch.Access
 
+    @typedoc """
+    * `simulcast_track_ids` - list of simulcast track ids.
+    * `ssrc_to_track_id` - maps ssrc to track id.
+    If track is a simulcast track it might not be in this list until
+    we receive its first RTP packets. This is beacuse simulcast tracks
+    don't announce their SSRCs in SDP. Instead, we have to wait for
+    their first RTP packets. There might be many SSRC pointing to the same track.
+    """
     @type t :: %__MODULE__{
             id: String.t(),
             trace_metadata: Keyword.t(),
@@ -189,6 +197,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             candidates: [any()],
             candidate_gathering_state: nil | :in_progress | :done,
             dtls_fingerprint: nil | {:sha256, binary()},
+            simulcast_track_ids: [Track.id()],
             ssrc_to_track_id: %{RTP.ssrc_t() => Track.id()},
             filter_codecs: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
             extensions: [Extension.t()],
@@ -213,6 +222,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               candidates: [],
               candidate_gathering_state: nil,
               dtls_fingerprint: nil,
+              simulcast_track_ids: [],
               ssrc_to_track_id: %{},
               filter_codecs: &SDP.filter_mappings(&1),
               extensions: [],
@@ -460,81 +470,58 @@ defmodule Membrane.WebRTC.EndpointBin do
         _ctx,
         state
       ) do
-    # function that creates map %{RTP extension name => data}
-    # basing on track's extamps
-    resolve_rtp_header_extensions = fn track ->
-      Map.new(rtp_header_extensions, fn extension ->
-        extension_name =
-          track.extmaps
-          |> Enum.find(&(&1.id == extension.identifier))
-          |> then(&Extension.from_extmap(state.extensions, &1))
-          |> then(& &1.name)
-
-        {extension_name, extension.data}
-      end)
-    end
-
-    track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
+    track_id = Map.get(state.ssrc_to_track_id, ssrc)
 
     track =
       if track_id do
         Map.fetch!(state.inbound_tracks, track_id)
       else
         # search in simulcast tracks
-        simulcast_track_ids = Map.get(state.ssrc_to_track_id, nil)
-
         simulcast_tracks =
           state.inbound_tracks
           |> Enum.filter(fn {inbound_track_id, _inbound_track} ->
-            inbound_track_id in simulcast_track_ids
+            inbound_track_id in state.simulcast_track_ids
           end)
           |> Enum.map(fn {_simulcast_track_id, simulcast_track} -> simulcast_track end)
 
         Enum.find(simulcast_tracks, fn simulcast_track ->
-          resolved_rtp_extensions = resolve_rtp_header_extensions.(simulcast_track)
+          resolved_rtp_extensions =
+            SDP.resolve_rtp_header_extensions(
+              simulcast_track,
+              rtp_header_extensions,
+              state.extensions
+            )
 
-          if !resolved_rtp_extensions.mid,
+          if resolved_rtp_extensions.mid == <<>>,
             do: raise("No MID extension for RTP stream #{inspect(ssrc)}")
 
           simulcast_track.mid == resolved_rtp_extensions.mid
         end)
       end
 
-    resolved_rtp_extensions = resolve_rtp_header_extensions.(track)
+    resolved_rtp_extensions =
+      SDP.resolve_rtp_header_extensions(track, rtp_header_extensions, state.extensions)
 
-    track =
-      if is_list(track.rids) do
-        %Track{track | rid_to_ssrc: Map.put(track.rid_to_ssrc, resolved_rtp_extensions.rid, ssrc)}
-      else
-        track
-      end
+    # this might be nil when track is not a simulcast one
+    rid = Map.get(resolved_rtp_extensions, :rid)
 
     state =
-      cond do
+      if track.ssrc == ssrc do
         # casual track
-        track.ssrc == ssrc ->
-          state
+        state
+      else
+        # simulcast track
+        track = %Track{
+          track
+          | ssrc: [ssrc | track.ssrc],
+            rid_to_ssrc: Map.put(track.rid_to_ssrc, rid, ssrc)
+        }
 
-        # simulcast track but this is its first RTP stream
-        track.ssrc == nil ->
-          track = %Track{track | ssrc: [ssrc]}
-          put_in(state, [:inbound_tracks, track.id], track)
-
-        # simulcast track and this is its subsequent RTP stream
-        true ->
-          track = %Track{track | ssrc: track.ssrc ++ [ssrc]}
-          put_in(state, [:inbound_tracks, track.id], track)
+        put_in(state, [:inbound_tracks, track.id], track)
       end
 
     state = put_in(state, [:ssrc_to_track_id, ssrc], track.id)
     depayloading_filter = depayloading_filter_for(track)
-
-    rid =
-      if is_list(track.rids) do
-        resolved_rtp_extensions.rid
-      else
-        nil
-      end
 
     notification = {:new_track, track.id, rid, track.encoding, depayloading_filter}
 
@@ -665,6 +652,12 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
+
+    removed_inbound_tracks
+    |> Enum.map(fn track -> track.id end)
+    |> then(fn removed_inbound_track_ids ->
+      update_in(state, [:simulcast_track_ids], &(&1 -- removed_inbound_track_ids))
+    end)
 
     state = %{
       state
@@ -863,21 +856,20 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp add_inbound_tracks(new_tracks, state) do
-    track_id_to_track = Map.new(new_tracks, &{&1.id, &1})
-    state = Map.update!(state, :inbound_tracks, &Map.merge(&1, track_id_to_track))
+    new_track_id_to_track = Map.new(new_tracks, &{&1.id, &1})
+    state = Map.update!(state, :inbound_tracks, &Map.merge(&1, new_track_id_to_track))
 
-    # group simulcast tracks under `nil` key
-    ssrc_to_track_id =
-      new_tracks
-      |> Enum.group_by(& &1.ssrc, & &1.id)
-      # convert ssrc => [track_id] (single element list) into ssrc => track_id
-      |> Enum.map(fn
-        {nil, track_ids} -> {nil, track_ids}
-        {ssrc, [track_id]} -> {ssrc, track_id}
-      end)
-      |> Enum.into(%{})
+    {new_simulcast_tracks, new_casual_tracks} = Enum.split_with(new_tracks, &(&1.ssrc == []))
 
-    state = Map.update!(state, :ssrc_to_track_id, &Map.merge(&1, ssrc_to_track_id))
+    new_ssrc_to_track_id =
+      Enum.into(new_casual_tracks, %{}, fn track -> {track.ssrc, track.id} end)
+
+    new_simulcast_track_ids = Enum.map(new_simulcast_tracks, fn track -> track.id end)
+
+    state =
+      state
+      |> Map.update!(:ssrc_to_track_id, &Map.merge(&1, new_ssrc_to_track_id))
+      |> Map.update!(:simulcast_track_ids, &(&1 ++ new_simulcast_track_ids))
 
     actions = if Enum.empty?(new_tracks), do: [], else: [notify: {:new_tracks, new_tracks}]
     {actions, state}

@@ -106,7 +106,7 @@ defmodule Membrane.WebRTC.SDP do
     |> add_extensions(config.extensions, track, direction, payload_type)
     |> then(fn media ->
       if is_list(track.rids) and direction == :recvonly do
-        # if this is an incoming simulcast track add rids else add SSRC
+        # if this is an incoming simulcast track add RIDs else add SSRC
         add_rids(media, track)
       else
         add_ssrc(media, track, direction)
@@ -362,7 +362,7 @@ defmodule Membrane.WebRTC.SDP do
     ssrc = Media.get_attribute(sdp_media, :ssrc)
     # this function is being called only for inbound media
     # therefore, if SSRC is `nil` `sdp_media` must represent simulcast track
-    ssrc = if ssrc == nil, do: nil, else: ssrc.id
+    ssrc = if ssrc == nil, do: [], else: ssrc.id
 
     encoding = encoding_to_atom(rtp.encoding)
 
@@ -387,27 +387,22 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   @doc """
-  Creates simulcast track based on prototype track, rtp header extenstions, and EndpointBin extensions.
+  Resolves RTP header extensions by creating mapping between extension name and extension data.
   """
-  @spec create_simulcast_track(
+  @spec resolve_rtp_header_extensions(
           Track.t(),
           [Membrane.RTP.Header.Extension.t()],
           [Membrane.WebRTC.Extension]
-        ) :: Track.t()
-  def create_simulcast_track(track, rtp_header_extensions, modules) do
-    mapping =
-      Map.new(rtp_header_extensions, fn extension ->
-        extension_name =
-          Enum.find(track.extmaps, &(&1.id == extension.identifier))
-          |> then(&Extension.from_extmap(modules, &1))
-          |> then(& &1.name)
+        ) :: %{(extension_name :: atom()) => extension_data :: binary()}
+  def resolve_rtp_header_extensions(track, rtp_header_extensions, modules) do
+    Map.new(rtp_header_extensions, fn extension ->
+      extension_name =
+        Enum.find(track.extmaps, &(&1.id == extension.identifier))
+        |> then(&Extension.from_extmap(modules, &1))
+        |> then(& &1.name)
 
-        {extension_name, extension.data}
-      end)
-
-    new_track_id = "#{track.id}:#{mapping.rid}"
-
-    %{track | mid: mapping.mid, rids: [mapping.rid], id: new_track_id}
+      {extension_name, extension.data}
+    end)
   end
 
   @doc """
