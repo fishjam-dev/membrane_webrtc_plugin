@@ -16,7 +16,7 @@ defmodule Membrane.WebRTC.Track do
     :status,
     :extmaps
   ]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil]
+  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, rid_to_ssrc: %{}]
 
   @type id :: String.t()
   @type encoding :: :OPUS | :H264 | :VP8
@@ -26,11 +26,12 @@ defmodule Membrane.WebRTC.Track do
           stream_id: String.t(),
           id: id,
           name: String.t(),
-          ssrc: RTP.ssrc_t() | binary(),
+          ssrc: RTP.ssrc_t() | [RTP.ssrc_t()],
           encoding: encoding,
           status: :pending | :ready | :linked | :disabled,
-          mid: non_neg_integer(),
-          rids: [String.t()],
+          mid: binary(),
+          rids: [String.t()] | nil,
+          rid_to_ssrc: %{},
           rtp_mapping: RTPMapping,
           fmtp: FMTP,
           extmaps: [Extmap]
@@ -45,10 +46,10 @@ defmodule Membrane.WebRTC.Track do
   @spec new(:audio | :video, stream_id :: String.t(),
           id: String.t(),
           name: String.t(),
-          ssrc: RTP.ssrc_t() | :simulcast,
+          ssrc: RTP.ssrc_t() | [RTP.ssrc_t()] | nil,
           encoding: encoding,
           mid: non_neg_integer(),
-          rids: [String.t()],
+          rids: [String.t()] | nil,
           rtp_mapping: RTPMapping,
           status: :pending | :ready | :linked | :disabled,
           fmtp: FMTP,

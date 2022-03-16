@@ -18,20 +18,17 @@ defmodule Membrane.WebRTC.TrackFilter do
   def_input_pad :input,
     availability: :always,
     caps: :any,
-    demand_unit: :buffers
+    demand_unit: :buffers,
+    demand_mode: :auto
 
   def_output_pad :output,
     availability: :always,
-    caps: :any
+    caps: :any,
+    demand_mode: :auto
 
   @impl true
   def handle_init(opts) do
     {:ok, %{enabled: opts.enabled}}
-  end
-
-  @impl true
-  def handle_demand(:output, size, :buffers, _ctx, state) do
-    {{:ok, demand: {:input, size}}, state}
   end
 
   @impl true

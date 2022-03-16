@@ -104,7 +104,14 @@ defmodule Membrane.WebRTC.SDP do
       )
     )
     |> add_extensions(config.extensions, track, direction, payload_type)
-    |> add_ssrc_or_rids(track)
+    |> then(fn media ->
+      if is_list(track.rids) and direction == :recvonly do
+        # if this is an incoming simulcast track add RIDs else add SSRC
+        add_rids(media, track)
+      else
+        add_ssrc(media, track, direction)
+      end
+    end)
   end
 
   defp add_extensions(media, extensions, %Track{type: :audio} = track, direction, pt),
@@ -117,12 +124,7 @@ defmodule Membrane.WebRTC.SDP do
     |> Media.add_attribute(:rtcp_rsize)
   end
 
-  defp add_ssrc_or_rids(media, track) do
-    new_ssrc = if simulcast_ssrc?(track.ssrc), do: :simulcast, else: track.ssrc
-    do_add_ssrc_or_rids(media, %{track | ssrc: new_ssrc})
-  end
-
-  defp do_add_ssrc_or_rids(media, %Track{ssrc: :simulcast} = track) do
+  defp add_rids(media, track) do
     rids = Enum.join(track.rids, ";")
 
     track.rids
@@ -132,11 +134,19 @@ defmodule Membrane.WebRTC.SDP do
     |> Media.add_attribute("simulcast:recv #{rids}")
   end
 
-  defp do_add_ssrc_or_rids(media, track),
-    do:
+  defp add_ssrc(media, track, direction) do
+    if direction == :recvonly do
+      # for :recvonly tracks browser will choose SSRC
+      media
+    else
+      # we don't have to handle case in which `track.ssrc` is a list of
+      # SSRCs as such case means `track` is a simulcast track and we don't add
+      # any SSRC for simulcast tracks only RIDs
       Media.add_attributes(media, [
         %SSRC{id: track.ssrc, attribute: "cname", value: track.name}
       ])
+    end
+  end
 
   @doc """
   Default value for filter_codecs option in `Membrane.WebRTC.EndpointBin`.
@@ -349,11 +359,10 @@ defmodule Membrane.WebRTC.SDP do
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
       get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
 
-    # This function is called only for tracks send_only_media, which means that SSRC for this m-line
-    # must be provided by the offerer, if this doesn't happen this means
-    # that this is a simulcast track and it has got rid
     ssrc = Media.get_attribute(sdp_media, :ssrc)
-    ssrc = if ssrc == nil, do: "simulcast#{mid}", else: ssrc.id
+    # this function is being called only for inbound media
+    # therefore, if SSRC is `nil` `sdp_media` must represent simulcast track
+    ssrc = if ssrc == nil, do: [], else: ssrc.id
 
     encoding = encoding_to_atom(rtp.encoding)
 
@@ -378,27 +387,22 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   @doc """
-  Creates simulcast track based on prototype track, rtp header extenstions, and EndpointBin extensions.
+  Resolves RTP header extensions by creating mapping between extension name and extension data.
   """
-  @spec create_simulcast_track(
+  @spec resolve_rtp_header_extensions(
           Track.t(),
           [Membrane.RTP.Header.Extension.t()],
           [Membrane.WebRTC.Extension]
-        ) :: Track.t()
-  def create_simulcast_track(track, rtp_header_extensions, modules) do
-    mapping =
-      Map.new(rtp_header_extensions, fn extension ->
-        extension_name =
-          Enum.find(track.extmaps, &(&1.id == extension.identifier))
-          |> then(&Extension.from_extmap(modules, &1))
-          |> then(& &1.name)
+        ) :: %{(extension_name :: atom()) => extension_data :: binary()}
+  def resolve_rtp_header_extensions(track, rtp_header_extensions, modules) do
+    Map.new(rtp_header_extensions, fn extension ->
+      extension_name =
+        Enum.find(track.extmaps, &(&1.id == extension.identifier))
+        |> then(&Extension.from_extmap(modules, &1))
+        |> then(& &1.name)
 
-        {extension_name, extension.data}
-      end)
-
-    new_track_id = "#{track.id}:#{mapping.rid}"
-
-    %{track | mid: mapping.mid, rids: [mapping.rid], id: new_track_id}
+      {extension_name, extension.data}
+    end)
   end
 
   @doc """
