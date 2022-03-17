@@ -440,8 +440,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       extensions: ctx.options.extensions,
       rtp_extensions: rtp_extensions,
       clock_rate: rtp_mapping.clock_rate,
-      depayloader: depayloader,
-      rtcp_fir_interval: Membrane.Time.seconds(10)
+      depayloader: depayloader
     ]
 
     spec = %ParentSpec{
