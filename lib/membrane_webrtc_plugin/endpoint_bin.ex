@@ -172,6 +172,15 @@ defmodule Membrane.WebRTC.EndpointBin do
         returns a depayloading filter's definition that can be attached to the output pad
         to work the same way as with the option set to true.
         """
+      ],
+      rtcp_fir_interval: [
+        spec: Membrane.Time.t() | nil,
+        default: Membrane.Time.second(),
+        description: """
+        Defines how often FIR should be sent.
+
+        For more information refer to RFC 5104 section 4.3.1.
+        """
       ]
     ]
 
@@ -420,7 +429,11 @@ defmodule Membrane.WebRTC.EndpointBin do
     # choose ssrc which corresponds to given `rid`
     ssrc = if rid, do: Map.fetch!(track.rid_to_ssrc, rid), else: ssrc
 
-    %{track_enabled: track_enabled, use_depayloader?: use_depayloader?} = ctx.options
+    %{
+      track_enabled: track_enabled,
+      use_depayloader?: use_depayloader?,
+      rtcp_fir_interval: rtcp_fir_interval
+    } = ctx.options
 
     depayloader =
       if use_depayloader? do
@@ -440,7 +453,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       extensions: ctx.options.extensions,
       rtp_extensions: rtp_extensions,
       clock_rate: rtp_mapping.clock_rate,
-      depayloader: depayloader
+      depayloader: depayloader,
+      rtcp_fir_interval: rtcp_fir_interval
     ]
 
     spec = %ParentSpec{
