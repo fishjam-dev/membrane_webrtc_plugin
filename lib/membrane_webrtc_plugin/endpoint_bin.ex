@@ -22,7 +22,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   require OpenTelemetry.Tracer, as: Tracer
 
   @type signal_message ::
-          {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
+          {:signal,
+           :no_sdp_offer | {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
   @type track_message :: alter_tracks_message() | enable_track_message() | disable_track_message()
 
@@ -657,6 +658,15 @@ defmodule Membrane.WebRTC.EndpointBin do
               include: [[:state, :id]]
             )
   def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
+
+  @impl true
+  @decorate trace("endpoint_bin.other.no_sdp_offer", include: [[:state, :id]])
+  def handle_other({:signal, :no_sdp_offer}, _ctx, state) do
+    state = %{state | ice: %{state.ice | restarting?: false}}
+    {restart_actions, state} = maybe_restart_ice(state)
+    actions = [forward: {:ice, :no_sdp_offer}] ++ restart_actions
+    {{:ok, actions}, state}
+  end
 
   @impl true
   @decorate trace("endpoint_bin.other.sdp_offer", include: [[:state, :id]])
