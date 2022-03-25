@@ -660,15 +660,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
 
   @impl true
-  @decorate trace("endpoint_bin.other.no_sdp_offer", include: [[:state, :id]])
-  def handle_other({:signal, :no_sdp_offer}, _ctx, state) do
-    state = %{state | ice: %{state.ice | restarting?: false}}
-    {restart_actions, state} = maybe_restart_ice(state)
-    actions = [forward: {:ice, :no_sdp_offer}] ++ restart_actions
-    {{:ok, actions}, state}
-  end
-
-  @impl true
   @decorate trace("endpoint_bin.other.sdp_offer", include: [[:state, :id]])
   def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
     {:ok, sdp} = sdp |> ExSDP.parse()
@@ -702,7 +693,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       )
 
     {actions, state} =
-      withl tracks_check: true <- state.inbound_tracks != %{} or outbound_tracks != %{},
+      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
             candidate_gathering_check: nil <- state.candidate_gathering_state do
         {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
       else
