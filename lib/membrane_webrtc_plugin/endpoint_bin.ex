@@ -692,7 +692,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       )
 
     {actions, state} =
-      withl tracks_check: true <- state.inbound_tracks != %{} or outbound_tracks != %{},
+      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
             candidate_gathering_check: nil <- state.candidate_gathering_state do
         {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
       else
