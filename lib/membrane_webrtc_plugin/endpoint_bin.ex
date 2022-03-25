@@ -22,8 +22,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   require OpenTelemetry.Tracer, as: Tracer
 
   @type signal_message ::
-          {:signal,
-           :no_sdp_offer | {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
+          {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
   @type track_message :: alter_tracks_message() | enable_track_message() | disable_track_message()
 
