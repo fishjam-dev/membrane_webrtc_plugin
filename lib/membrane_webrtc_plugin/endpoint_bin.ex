@@ -115,6 +115,15 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Integrated TURN Options"
               ],
+              simulcast?: [
+                spec: boolean(),
+                default: true,
+                description: """
+                Whether to accept simulcast tracks or not.
+                If set to `false`, simulcast tracks will be disabled i.e.
+                sender will not send them.
+                """
+              ],
               trace_metadata: [
                 spec: :list,
                 default: [],
@@ -212,6 +221,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             extensions: [Extension.t()],
             integrated_turn_servers: [any()],
             component_path: String.t(),
+            simulcast?: boolean(),
             ice: %{
               restarting?: boolean(),
               waiting_restart?: boolean(),
@@ -237,6 +247,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               extensions: [],
               integrated_turn_servers: [],
               component_path: "",
+              simulcast?: true,
               ice: %{
                 restarting?: false,
                 waiting_restart?: false,
@@ -325,6 +336,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         integrated_turn_servers: ICE.TURNManager.get_launched_turn_servers(),
         extensions: Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new())),
         component_path: Membrane.ComponentPath.get_formatted(),
+        simulcast?: opts.simulcast?,
         ice: %{
           restarting?: false,
           waiting_restart?: false,
@@ -666,11 +678,12 @@ defmodule Membrane.WebRTC.EndpointBin do
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
 
-    removed_inbound_tracks
-    |> Enum.map(fn track -> track.id end)
-    |> then(fn removed_inbound_track_ids ->
-      update_in(state, [:simulcast_track_ids], &(&1 -- removed_inbound_track_ids))
-    end)
+    state =
+      removed_inbound_tracks
+      |> Enum.map(fn track -> track.id end)
+      |> then(fn removed_inbound_track_ids ->
+        update_in(state, [:simulcast_track_ids], &(&1 -- removed_inbound_track_ids))
+      end)
 
     state = %{
       state
@@ -864,7 +877,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       state.extensions,
       old_inbound_tracks,
       outbound_tracks,
-      mid_to_track_id
+      mid_to_track_id,
+      state.simulcast?
     )
   end
 

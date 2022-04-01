@@ -16,9 +16,10 @@ defmodule Membrane.WebRTC.SDP do
   - ice_ufrag - ICE username fragment
   - ice_pwd - ICE password
   - fingerprint - DTLS fingerprint
+  - extensions - list of webrtc extensions to use
   - inbound_tracks - list of inbound tracks
   - outbound_tracks - list of outbound tracks
-  - mappings - dictionary where keys are tracks_id and value are mapping got from SDP offer.
+  - ice_lite? - defines whether use ICE Lite or not
   """
   @spec create_answer(
           ice_ufrag: String.t(),
@@ -176,7 +177,7 @@ defmodule Membrane.WebRTC.SDP do
   * old_inbound_tracks - list of old inbound tracks
   * outbound_tracks - list of outbound_tracks
   * mid_to_track_id - map of mid to track_id for all active inbound_tracks
-
+  * simulcast? - whether to accept simulcast or not
   """
   @spec get_tracks(
           sdp :: ExSDP.t(),
@@ -184,7 +185,8 @@ defmodule Membrane.WebRTC.SDP do
           enabled_extensions :: [Extension.t()],
           old_inbound_tracks :: [Track.t()],
           outbound_tracks :: [Track.t()],
-          mid_to_track_id :: %{String.t() => Track.id()}
+          mid_to_track_id :: %{String.t() => Track.id()},
+          simulcast? :: boolean()
         ) ::
           {new_inbound_tracks :: [Track.t()], removed_inbound_tracks :: [Track.t()],
            inbound_tracks :: [Track.t()], outbound_tracks :: [Track.t()]}
@@ -194,13 +196,14 @@ defmodule Membrane.WebRTC.SDP do
         enabled_extensions,
         old_inbound_tracks,
         outbound_tracks,
-        mid_to_track_id
+        mid_to_track_id,
+        simulcast?
       ) do
     send_only_sdp_media = Enum.filter(sdp.media, &(:sendonly in &1.attributes))
 
     stream_id = Track.stream_id()
 
-    new_inbound_tracks =
+    {new_inbound_tracks, new_inbound_disabled_tracks} =
       Enum.map(
         send_only_sdp_media,
         &create_track_from_sdp_media(
@@ -208,10 +211,12 @@ defmodule Membrane.WebRTC.SDP do
           stream_id,
           codecs_filter,
           enabled_extensions,
-          mid_to_track_id
+          mid_to_track_id,
+          simulcast?
         )
       )
       |> get_new_tracks(old_inbound_tracks)
+      |> split_by_disabled_tracks()
 
     {same_inbound_tracks, removed_inbound_tracks} =
       update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id)
@@ -221,8 +226,8 @@ defmodule Membrane.WebRTC.SDP do
     recv_only_sdp_media_data = get_media_by_attribute(sdp, codecs_filter, :recvonly)
     outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media_data, outbound_tracks)
 
-    {new_inbound_tracks, removed_inbound_tracks, new_inbound_tracks ++ old_inbound_tracks,
-     outbound_tracks}
+    {new_inbound_tracks, removed_inbound_tracks,
+     new_inbound_tracks ++ new_inbound_disabled_tracks ++ old_inbound_tracks, outbound_tracks}
   end
 
   defp update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id),
@@ -252,6 +257,10 @@ defmodule Membrane.WebRTC.SDP do
   defp get_new_tracks(inbound_tracks, old_inbound_tracks) do
     known_ids = Enum.map(old_inbound_tracks, fn track -> track.id end)
     Enum.filter(inbound_tracks, &(&1.id not in known_ids))
+  end
+
+  defp split_by_disabled_tracks(inbound_tracks) do
+    Enum.split_with(inbound_tracks, fn %Track{status: status} -> status != :disabled end)
   end
 
   defp get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter) do
@@ -345,7 +354,8 @@ defmodule Membrane.WebRTC.SDP do
          stream_id,
          codecs_filter,
          enabled_extensions,
-         mid_to_track_id
+         mid_to_track_id,
+         simulcast?
        ) do
     media_type = sdp_media.type
 
@@ -358,6 +368,14 @@ defmodule Membrane.WebRTC.SDP do
 
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
       get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
+
+    # if simulcast was offered but we don't accept it, turn track off
+    # this is not compliant with WebRTC standard as we should only
+    # remove simulcast attributes and be prepared to receive one
+    # encoding but in such a case browser changes SSRC after ICE restart
+    # and we cannot handle this at the moment
+    rids = if(rids == [], do: nil, else: rids)
+    disabled = if rids != nil and simulcast? == false, do: true, else: disabled
 
     ssrc = Media.get_attribute(sdp_media, :ssrc)
     # this function is being called only for inbound media
@@ -376,7 +394,7 @@ defmodule Membrane.WebRTC.SDP do
       ssrc: ssrc,
       encoding: encoding,
       mid: mid,
-      rids: if(rids == [], do: nil, else: rids),
+      rids: rids,
       rtp_mapping: rtp,
       fmtp: fmtp,
       status: if(disabled, do: :disabled, else: :ready),
