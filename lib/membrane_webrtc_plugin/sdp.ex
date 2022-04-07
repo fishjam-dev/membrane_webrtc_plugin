@@ -7,6 +7,8 @@ defmodule Membrane.WebRTC.SDP do
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.WebRTC.{Extension, Track}
 
+  @supported_rids ["l", "m", "h"]
+
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
   @doc """
@@ -369,13 +371,20 @@ defmodule Membrane.WebRTC.SDP do
     %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
       get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
 
-    # if simulcast was offered but we don't accept it, turn track off
-    # this is not compliant with WebRTC standard as we should only
-    # remove simulcast attributes and be prepared to receive one
-    # encoding but in such a case browser changes SSRC after ICE restart
-    # and we cannot handle this at the moment
     rids = if(rids == [], do: nil, else: rids)
-    disabled = if rids != nil and simulcast? == false, do: true, else: disabled
+
+    disabled =
+      cond do
+        # if simulcast was offered but we don't accept it, turn track off
+        # this is not compliant with WebRTC standard as we should only
+        # remove simulcast attributes and be prepared to receive one
+        # encoding but in such a case browser changes SSRC after ICE restart
+        # and we cannot handle this at the moment
+        rids != nil and simulcast? == false -> true
+        # enforce rid values
+        is_list(rids) and Enum.any?(rids, &(&1 not in @supported_rids)) -> true
+        true -> disabled
+      end
 
     ssrc = Media.get_attribute(sdp_media, :ssrc)
     # this function is being called only for inbound media
