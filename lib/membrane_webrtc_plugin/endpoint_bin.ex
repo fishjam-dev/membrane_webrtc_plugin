@@ -208,7 +208,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               waiting_restart?: boolean(),
               pwd: nil | String.t(),
               ufrag: nil | String.t(),
-              first?: boolean(),
+              first?: boolean()
             }
           }
 
@@ -233,7 +233,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 waiting_restart?: false,
                 pwd: nil,
                 ufrag: nil,
-                first?: true,
+                first?: true
               }
   end
 
@@ -305,7 +305,7 @@ defmodule Membrane.WebRTC.EndpointBin do
           waiting_restart?: false,
           pwd: nil,
           ufrag: nil,
-          first?: true,
+          first?: true
         }
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
