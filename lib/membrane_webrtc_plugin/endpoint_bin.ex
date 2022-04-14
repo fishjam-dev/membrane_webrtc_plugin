@@ -21,6 +21,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
   require OpenTelemetry.Tracer, as: Tracer
 
+  # we always want to use ICE lite at the moment
+  @ice_lite true
+
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
@@ -206,7 +209,6 @@ defmodule Membrane.WebRTC.EndpointBin do
               pwd: nil | String.t(),
               ufrag: nil | String.t(),
               first?: boolean(),
-              ice_lite?: boolean()
             }
           }
 
@@ -232,7 +234,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 pwd: nil,
                 ufrag: nil,
                 first?: true,
-                ice_lite?: true
               }
   end
 
@@ -305,7 +306,6 @@ defmodule Membrane.WebRTC.EndpointBin do
           pwd: nil,
           ufrag: nil,
           first?: true,
-          ice_lite?: true
         }
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -604,16 +604,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   @decorate trace("endpoint_bin.notification.connection_ready",
               include: [[:state, :ice, :restarting?], [:state, :id]]
             )
-  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
-      when not state.ice.restarting? and not state.ice.ice_lite? do
-    {actions, state} = maybe_restart_ice(state, true)
-    {{:ok, actions}, state}
-  end
-
-  @impl true
-  @decorate trace("endpoint_bin.notification.connection_ready",
-              include: [[:state, :ice, :restarting?], [:state, :id]]
-            )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state),
     do: {:ok, state}
 
@@ -663,7 +653,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
         extensions: state.extensions,
-        ice_lite?: state.ice.ice_lite?
+        ice_lite?: @ice_lite
       )
 
     {actions, state} =
