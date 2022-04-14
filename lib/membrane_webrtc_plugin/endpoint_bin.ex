@@ -51,6 +51,15 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "List of initial outbound tracks"
               ],
+              handshake_opts: [
+                type: :list,
+                spec: Keyword.t(),
+                default: [],
+                description: """
+                Keyword list with options for handshake module. For more information please
+                refer to `t:ExDTLS.opts_t/0`
+                """
+              ],
               rtcp_receiver_report_interval: [
                 spec: Membrane.Time.t() | nil,
                 default: nil,
