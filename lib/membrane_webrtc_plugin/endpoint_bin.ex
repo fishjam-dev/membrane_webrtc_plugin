@@ -17,7 +17,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
-  alias Membrane.{ICE, Libnice}
+  alias Membrane.ICE
   alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
   require OpenTelemetry.Tracer, as: Tracer
 
@@ -51,32 +51,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "List of initial outbound tracks"
               ],
-              stun_servers: [
-                type: :list,
-                spec: [ExLibnice.stun_server()],
-                default: [],
-                description: "List of stun servers"
-              ],
-              port_range: [
-                spec: Range.t(),
-                default: 0..0,
-                description: "Port range to be used by `Membrane.Libnice.Bin`"
-              ],
-              turn_servers: [
-                type: :list,
-                spec: [ExLibnice.relay_info()],
-                default: [],
-                description: "List of turn servers"
-              ],
-              handshake_opts: [
-                type: :list,
-                spec: Keyword.t(),
-                default: [],
-                description: """
-                Keyword list with options for handshake module. For more information please
-                refer to `Membrane.Libnice.Bin`
-                """
-              ],
               rtcp_receiver_report_interval: [
                 spec: Membrane.Time.t() | nil,
                 default: nil,
@@ -105,13 +79,8 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
               ],
-              use_integrated_turn: [
-                spec: boolean(),
-                default: false,
-                description: "Set to `true`, to use integrated TURN instead of libnice"
-              ],
               integrated_turn_options: [
-                spec: [TURN.Endpoint.integrated_turn_options_t()],
+                spec: [ICE.Endpoint.integrated_turn_options_t()],
                 default: [],
                 description: "Integrated TURN Options"
               ],
@@ -254,7 +223,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 pwd: nil,
                 ufrag: nil,
                 first?: true,
-                ice_lite?: false
+                ice_lite?: true
               }
   end
 
@@ -269,27 +238,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     create_or_join_otel_context(opts, trace_metadata)
 
-    ice_impl =
-      if opts.use_integrated_turn do
-        %ICE.Endpoint{
-          integrated_turn_options: opts.integrated_turn_options,
-          handshake_opts: opts.handshake_opts
-        }
-      else
-        %Libnice.Bin{
-          stun_servers: opts.stun_servers,
-          turn_servers: opts.turn_servers,
-          port_range: opts.port_range,
-          controlling_mode: true,
-          handshake_module: Membrane.DTLS.Handshake,
-          handshake_opts: opts.handshake_opts
-        }
-      end
-
-    ice_lite? = if opts.use_integrated_turn, do: true, else: false
-
     children = %{
-      ice: ice_impl,
+      ice: %ICE.Endpoint{
+        integrated_turn_options: opts.integrated_turn_options,
+        handshake_opts: opts.handshake_opts
+      },
       rtp: %Membrane.RTP.SessionBin{
         secure?: true,
         rtcp_receiver_report_interval: opts.rtcp_receiver_report_interval,
@@ -343,7 +296,7 @@ defmodule Membrane.WebRTC.EndpointBin do
           pwd: nil,
           ufrag: nil,
           first?: true,
-          ice_lite?: ice_lite?
+          ice_lite?: true
         }
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
