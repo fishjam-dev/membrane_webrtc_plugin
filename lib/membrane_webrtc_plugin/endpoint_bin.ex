@@ -17,9 +17,12 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
-  alias Membrane.{ICE, Libnice}
+  alias Membrane.ICE
   alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
   require OpenTelemetry.Tracer, as: Tracer
+
+  # we always want to use ICE lite at the moment
+  @ice_lite true
 
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -51,30 +54,13 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "List of initial outbound tracks"
               ],
-              stun_servers: [
-                type: :list,
-                spec: [ExLibnice.stun_server()],
-                default: [],
-                description: "List of stun servers"
-              ],
-              port_range: [
-                spec: Range.t(),
-                default: 0..0,
-                description: "Port range to be used by `Membrane.Libnice.Bin`"
-              ],
-              turn_servers: [
-                type: :list,
-                spec: [ExLibnice.relay_info()],
-                default: [],
-                description: "List of turn servers"
-              ],
               handshake_opts: [
                 type: :list,
                 spec: Keyword.t(),
                 default: [],
                 description: """
                 Keyword list with options for handshake module. For more information please
-                refer to `Membrane.Libnice.Bin`
+                refer to `t:ExDTLS.opts_t/0`
                 """
               ],
               rtcp_receiver_report_interval: [
@@ -105,13 +91,8 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Logger metadata used for endpoint bin and all its descendants"
               ],
-              use_integrated_turn: [
-                spec: boolean(),
-                default: false,
-                description: "Set to `true`, to use integrated TURN instead of libnice"
-              ],
               integrated_turn_options: [
-                spec: [TURN.Endpoint.integrated_turn_options_t()],
+                spec: [ICE.Endpoint.integrated_turn_options_t()],
                 default: [],
                 description: "Integrated TURN Options"
               ],
@@ -227,8 +208,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               waiting_restart?: boolean(),
               pwd: nil | String.t(),
               ufrag: nil | String.t(),
-              first?: boolean(),
-              ice_lite?: boolean()
+              first?: boolean()
             }
           }
 
@@ -253,8 +233,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 waiting_restart?: false,
                 pwd: nil,
                 ufrag: nil,
-                first?: true,
-                ice_lite?: false
+                first?: true
               }
   end
 
@@ -269,27 +248,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     create_or_join_otel_context(opts, trace_metadata)
 
-    ice_impl =
-      if opts.use_integrated_turn do
-        %ICE.Endpoint{
-          integrated_turn_options: opts.integrated_turn_options,
-          handshake_opts: opts.handshake_opts
-        }
-      else
-        %Libnice.Bin{
-          stun_servers: opts.stun_servers,
-          turn_servers: opts.turn_servers,
-          port_range: opts.port_range,
-          controlling_mode: true,
-          handshake_module: Membrane.DTLS.Handshake,
-          handshake_opts: opts.handshake_opts
-        }
-      end
-
-    ice_lite? = if opts.use_integrated_turn, do: true, else: false
-
     children = %{
-      ice: ice_impl,
+      ice: %ICE.Endpoint{
+        integrated_turn_options: opts.integrated_turn_options,
+        handshake_opts: opts.handshake_opts
+      },
       rtp: %Membrane.RTP.SessionBin{
         secure?: true,
         rtcp_receiver_report_interval: opts.rtcp_receiver_report_interval,
@@ -342,8 +305,7 @@ defmodule Membrane.WebRTC.EndpointBin do
           waiting_restart?: false,
           pwd: nil,
           ufrag: nil,
-          first?: true,
-          ice_lite?: ice_lite?
+          first?: true
         }
       }
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
@@ -642,16 +604,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   @decorate trace("endpoint_bin.notification.connection_ready",
               include: [[:state, :ice, :restarting?], [:state, :id]]
             )
-  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
-      when not state.ice.restarting? and not state.ice.ice_lite? do
-    {actions, state} = maybe_restart_ice(state, true)
-    {{:ok, actions}, state}
-  end
-
-  @impl true
-  @decorate trace("endpoint_bin.notification.connection_ready",
-              include: [[:state, :ice, :restarting?], [:state, :id]]
-            )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state),
     do: {:ok, state}
 
@@ -701,7 +653,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
         extensions: state.extensions,
-        ice_lite?: state.ice.ice_lite?
+        ice_lite?: @ice_lite
       )
 
     {actions, state} =
