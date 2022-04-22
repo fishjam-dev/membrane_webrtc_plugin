@@ -114,6 +114,17 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: :list | any(),
                 default: [],
                 description: "Trace context for otel propagation"
+              ],
+              recv_only: [
+                spec: boolean(),
+                default: false,
+                description: """
+                Option that configures this endpoint to only receive stream on input pads and disables output pads.
+
+                Setting this option to `true` will:
+                - set any incoming tracks to `:disabled` for each incoming SDP Answer
+                - cause the pipeline to crash if RTP streams arrives anyway
+                """
               ]
 
   def_input_pad :input,
@@ -203,6 +214,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             integrated_turn_servers: [any()],
             component_path: String.t(),
             simulcast?: boolean(),
+            recv_only: boolean(),
             ice: %{
               restarting?: boolean(),
               waiting_restart?: boolean(),
@@ -234,7 +246,8 @@ defmodule Membrane.WebRTC.EndpointBin do
                 pwd: nil,
                 ufrag: nil,
                 first?: true
-              }
+              },
+              recv_only: false
   end
 
   @impl true
@@ -286,6 +299,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     state =
       %State{
         id: Keyword.get(trace_metadata, :name, "endpointBin"),
+        recv_only: opts.recv_only,
         trace_metadata: trace_metadata,
         log_metadata: opts.log_metadata,
         inbound_tracks: %{},
@@ -327,7 +341,6 @@ defmodule Membrane.WebRTC.EndpointBin do
               ]
             )
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
-    # TODO: check this one
     %{track_enabled: track_enabled, use_payloader?: use_payloader?} = ctx.options
 
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
@@ -448,6 +461,16 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
+  def handle_notification(
+        {:new_rtp_stream, _ssrc, _pt, _rtp_header_extensions},
+        _from,
+        _ctx,
+        %{recv_only: true} = _state
+      ) do
+    raise "Incoming RTP Stream appeared even though this endpoint is configured to be receive only"
+  end
+
+  @impl true
   @decorate trace("endpoint_bin.notification.new_rtp_stream",
               include: [:track_id, :ssrc, [:state, :id]]
             )
@@ -455,7 +478,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         {:new_rtp_stream, ssrc, _pt, rtp_header_extensions},
         _from,
         _ctx,
-        state
+        %{recv_only: false} = state
       ) do
     track_id = Map.get(state.ssrc_to_track_id, ssrc)
 
@@ -629,6 +652,11 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
+
+    inbound_tracks =
+      if state.recv_only,
+        do: Enum.map(inbound_tracks, &Map.put(&1, :status, :disabled)),
+        else: inbound_tracks
 
     state =
       removed_inbound_tracks
