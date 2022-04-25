@@ -44,6 +44,14 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   @type disable_track_message :: {:disable_track, Track.id()}
 
+  @typedoc """
+  Type describing operation mode of Endpoint Bin
+  - `:send_only` - only send tracks
+  - `:receive_only` - only receive tracks
+  - `:send_and_receive` - send and receive tracks
+  """
+  @type mode_t() :: :send_only | :recv_only | :send_recv
+
   def_options inbound_tracks: [
                 spec: [Membrane.WebRTC.Track.t()],
                 default: [],
@@ -115,15 +123,15 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Trace context for otel propagation"
               ],
-              recv_only: [
-                spec: boolean(),
-                default: false,
+              mode: [
+                spec: mode_t(),
+                default: :send_recv,
                 description: """
-                Option that configures this endpoint to only receive stream on input pads and disables output pads.
+                Option that determines if this endpoint is allowed to send and receive media.
 
-                Setting this option to `true` will:
-                - set any incoming tracks to `:disabled` for each incoming SDP Answer
-                - cause the pipeline to crash if RTP streams arrives anyway
+                - `:send_only` - endpoint is only allowed to send media, all incoming offers will be rejected
+                - `:recv_only` - endpoint is only allowed to receive media, all tracks offered through SDP will be rejected and the process will terminate if tracks are sent anyway
+                - `:send_recv` - endpoint is allowed to send and receive media
                 """
               ]
 
@@ -214,7 +222,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             integrated_turn_servers: [any()],
             component_path: String.t(),
             simulcast?: boolean(),
-            recv_only: boolean(),
+            mode: Membrane.WebRTC.EndpointBin.mode_t(),
             ice: %{
               restarting?: boolean(),
               waiting_restart?: boolean(),
@@ -247,7 +255,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 ufrag: nil,
                 first?: true
               },
-              recv_only: false
+              mode: :send_recv
   end
 
   @impl true
@@ -299,7 +307,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     state =
       %State{
         id: Keyword.get(trace_metadata, :name, "endpointBin"),
-        recv_only: opts.recv_only,
+        mode: opts.mode,
         trace_metadata: trace_metadata,
         log_metadata: opts.log_metadata,
         inbound_tracks: %{},
@@ -408,7 +416,8 @@ defmodule Membrane.WebRTC.EndpointBin do
                 [:state, :id]
               ]
             )
-  def handle_pad_added(Pad.ref(:output, {track_id, rid}) = pad, ctx, state) do
+  def handle_pad_added(Pad.ref(:output, {track_id, rid}) = pad, ctx, %{mode: mode} = state)
+      when mode in [:recv_only, :send_recv] do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
       track = Map.fetch!(state.inbound_tracks, track_id)
 
@@ -465,7 +474,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         {:new_rtp_stream, _ssrc, _pt, _rtp_header_extensions},
         _from,
         _ctx,
-        %{recv_only: true} = _state
+        %{mode: :recv_only} = _state
       ) do
     raise "Incoming RTP Stream appeared even though this endpoint is configured to be receive only"
   end
@@ -478,8 +487,9 @@ defmodule Membrane.WebRTC.EndpointBin do
         {:new_rtp_stream, ssrc, _pt, rtp_header_extensions},
         _from,
         _ctx,
-        %{recv_only: false} = state
-      ) do
+        %{mode: mode} = state
+      )
+      when mode in [:send_only, :send_recv] do
     track_id = Map.get(state.ssrc_to_track_id, ssrc)
 
     track =
@@ -654,7 +664,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
 
     inbound_tracks =
-      if state.recv_only,
+      if state.mode == :recv_only,
         do: Enum.map(inbound_tracks, &Map.put(&1, :status, :disabled)),
         else: inbound_tracks
 
