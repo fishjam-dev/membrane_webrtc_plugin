@@ -417,7 +417,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               ]
             )
   def handle_pad_added(Pad.ref(:output, {track_id, rid}) = pad, ctx, %{mode: mode} = state)
-      when mode in [:recv_only, :send_recv] do
+      when mode in [:send_only, :send_recv] do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
       track = Map.fetch!(state.inbound_tracks, track_id)
 
@@ -474,9 +474,9 @@ defmodule Membrane.WebRTC.EndpointBin do
         {:new_rtp_stream, _ssrc, _pt, _rtp_header_extensions},
         _from,
         _ctx,
-        %{mode: :recv_only} = _state
+        %{mode: :send_only} = _state
       ) do
-    raise "Incoming RTP Stream appeared even though this endpoint is configured to be receive only"
+    raise "Incoming RTP Stream appeared even though this endpoint is configured to be send only"
   end
 
   @impl true
@@ -489,7 +489,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         _ctx,
         %{mode: mode} = state
       )
-      when mode in [:send_only, :send_recv] do
+      when mode in [:recv_only, :send_recv] do
     track_id = Map.get(state.ssrc_to_track_id, ssrc)
 
     track =
@@ -664,7 +664,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
 
     inbound_tracks =
-      if state.mode == :recv_only,
+      if state.mode == :send_only,
         do: Enum.map(inbound_tracks, &Map.put(&1, :status, :disabled)),
         else: inbound_tracks
 
