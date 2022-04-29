@@ -18,7 +18,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.ICE
-  alias Membrane.WebRTC.{Extension, SDP, Track, TrackFilter}
+  alias Membrane.WebRTC.{Extension, SDP, Track}
   require OpenTelemetry.Tracer, as: Tracer
 
   # we always want to use ICE lite at the moment
@@ -27,22 +27,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
-  @type track_message :: alter_tracks_message() | enable_track_message() | disable_track_message()
+  @type track_message :: alter_tracks_message()
 
   @typedoc """
   Message that adds or removes tracks.
   """
   @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.id()]}
-
-  @typedoc """
-  Message that enables track.
-  """
-  @type enable_track_message :: {:enable_track, Track.id()}
-
-  @typedoc """
-  Message that disables track.
-  """
-  @type disable_track_message :: {:disable_track, Track.id()}
 
   def_options inbound_tracks: [
                 spec: [Membrane.WebRTC.Track.t()],
@@ -121,11 +111,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     caps: :any,
     availability: :on_request,
     options: [
-      track_enabled: [
-        spec: boolean(),
-        default: true,
-        description: "Enable or disable track"
-      ],
       use_payloader?: [
         spec: boolean(),
         default: true,
@@ -141,11 +126,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     caps: :any,
     availability: :on_request,
     options: [
-      track_enabled: [
-        spec: boolean(),
-        default: true,
-        description: "Enable or disable track"
-      ],
       extensions: [
         spec: [Membrane.RTP.SessionBin.extension_t()],
         default: [],
@@ -321,14 +301,13 @@ defmodule Membrane.WebRTC.EndpointBin do
                 [:mapping, :payload_type],
                 :encoding,
                 :ssrc,
-                :track_enabled,
                 :track_id,
                 [:state, :id]
               ]
             )
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     # TODO: check this one
-    %{track_enabled: track_enabled, use_payloader?: use_payloader?} = ctx.options
+    %{use_payloader?: use_payloader?} = ctx.options
 
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
       Map.fetch!(state.outbound_tracks, track_id)
@@ -374,7 +353,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         [
           link_bin_input(pad)
           |> then(encoding_specific_links)
-          |> to({:track_filter, track_id}, %TrackFilter{enabled: track_enabled})
           |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
           |> to(:rtp)
           |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
@@ -390,7 +368,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 [:rtp_mapping, :clock_rate],
                 [:rtp_mapping, :payload_type],
                 :ssrc,
-                :track_enabled,
                 :track_id,
                 [:state, :id]
               ]
@@ -404,7 +381,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     ssrc = if rid, do: Map.fetch!(track.rid_to_ssrc, rid), else: ssrc
 
     %{
-      track_enabled: track_enabled,
       use_depayloader?: use_depayloader?,
       rtcp_fir_interval: rtcp_fir_interval
     } = ctx.options
@@ -435,9 +411,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       links: [
         link(:rtp)
         |> via_out(Pad.ref(:output, ssrc), options: output_pad_options)
-        |> to({:track_filter, ssrc}, %TrackFilter{
-          enabled: track_enabled
-        })
         |> to_bin_output(pad)
       ]
     }
@@ -762,18 +735,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> maybe_restart_ice(true)
 
     {{:ok, actions}, state}
-  end
-
-  @impl true
-  @decorate trace("endpoint_bin.other.enable_track", include: [[:state, :id]])
-  def handle_other({:enable_track, track_id}, _ctx, state) do
-    {{:ok, forward: {{:track_filter, track_id}, :enable_track}}, state}
-  end
-
-  @impl true
-  @decorate trace("endpoint_bin.other.disable_track", include: [[:state, :id]])
-  def handle_other({:disable_track, track_id}, _ctx, state) do
-    {{:ok, forward: {{:track_filter, track_id}, :disable_track}}, state}
   end
 
   defp maybe_restart_ice(state, set_waiting_restart? \\ false) do
