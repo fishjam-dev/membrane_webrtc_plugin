@@ -260,7 +260,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     spec = %ParentSpec{
       children: children,
-      links: links
+      links: links,
+      log_metadata: opts.log_metadata
     }
 
     state =
@@ -291,7 +292,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
 
-    {{:ok, spec: spec, log_metadata: opts.log_metadata}, state}
+    {{:ok, spec: spec}, state}
   end
 
   @impl true
