@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
 
   def project do
@@ -47,13 +47,13 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, "~> 0.7.0"},
       {:membrane_rtp_format, "~> 0.4.0"},
-      {:membrane_ice_plugin, "~> 0.10.0"},
+      {:membrane_ice_plugin, "~> 0.11.0"},
       {:membrane_funnel_plugin, "~> 0.6.0"},
-      {:membrane_h264_ffmpeg_plugin, "~> 0.20.0"},
+      {:membrane_h264_ffmpeg_plugin, "~> 0.21.0"},
       {:membrane_rtp_h264_plugin, "~> 0.12.0"},
-      {:membrane_rtp_plugin, "~> 0.12.1"},
-      {:ex_libsrtp, "~> 0.3.0"},
-      {:membrane_rtp_vp8_plugin, "~> 0.4.0"},
+      {:membrane_rtp_plugin, "~> 0.13.0"},
+      {:ex_libsrtp, "~> 0.4.0"},
+      {:membrane_rtp_vp8_plugin, "~> 0.5.0"},
       {:membrane_rtp_opus_plugin, "~> 0.5.0"},
       {:ex_doc, "~> 0.22", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0.0", only: :dev, runtime: false},
