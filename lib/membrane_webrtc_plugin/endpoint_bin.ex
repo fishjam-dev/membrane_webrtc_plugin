@@ -403,18 +403,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
-    keyframe_detector =
-      case Membrane.RTP.PayloadFormatResolver.keyframe_detector(encoding) do
-        {:ok, keyframe_detector} -> keyframe_detector
-        :error -> nil
-      end
-
-    frame_detector =
-      case Membrane.RTP.PayloadFormatResolver.frame_detector(encoding) do
-        {:ok, frame_detector} -> frame_detector
-        :error -> nil
-      end
-
     rtp_extensions =
       extmaps
       |> Enum.map(&Extension.as_rtp_extension(state.extensions, &1))
@@ -427,8 +415,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       rtp_extensions: rtp_extensions,
       clock_rate: rtp_mapping.clock_rate,
       depayloader: depayloader,
-      keyframe_detector: keyframe_detector,
-      frame_detector: frame_detector,
       telemetry_metadata: telemetry_metadata,
       encoding: encoding,
       rtcp_fir_interval: rtcp_fir_interval
