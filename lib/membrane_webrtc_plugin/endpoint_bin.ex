@@ -823,15 +823,14 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
-    SDP.get_tracks(
-      sdp,
-      state.filter_codecs,
-      state.extensions,
-      old_inbound_tracks,
-      outbound_tracks,
-      mid_to_track_id,
-      state.simulcast?
-    )
+    constraints = %Track.Constraints{
+      codecs_filter: state.filter_codecs,
+      enabled_extensions: state.extensions,
+      simulcast?: state.simulcast?,
+      endpoint_direction: state.endpoint_direction
+    }
+
+    SDP.get_tracks(sdp, constraints, old_inbound_tracks, outbound_tracks, mid_to_track_id)
   end
 
   defp add_inbound_tracks([], state) do

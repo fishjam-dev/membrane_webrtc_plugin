@@ -1,4 +1,4 @@
-defmodule Membrane.WebRTC.Utils do
+defmodule Membrane.WebRTC.Test.Utils do
   @moduledoc false
   alias Membrane.WebRTC.Track
 
@@ -14,7 +14,7 @@ defmodule Membrane.WebRTC.Utils do
   @doc """
   Creates new `t:Track.t/0`.
   """
-  @spec get_track(:audio | :video)
+  @spec get_track(:audio | :video) :: Track.t()
   def get_track(type \\ :audio) do
     stream_id = Track.stream_id()
     Track.new(type, stream_id)

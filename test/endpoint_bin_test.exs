@@ -1,7 +1,8 @@
 defmodule Membrane.WebRTC.EndpointBinTest do
   use ExUnit.Case, async: true
 
-  alias Membrane.WebRTC.{EndpointBin, Utils}
+  alias Membrane.WebRTC.EndpointBin
+  alias Membrane.WebRTC.Test.Utils
 
   @directions [:sendonly, :recvonly, :sendrecv]
 
@@ -21,6 +22,7 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     assert_raise RuntimeError, fn -> EndpointBin.handle_init(options) end
   end
 
+  @tag :debug
   test "creating recvonly EndpointBin with outbound tracks raises an error" do
     track = Utils.get_track()
     options = %EndpointBin{direction: :recvonly, outbound_tracks: [track]}
