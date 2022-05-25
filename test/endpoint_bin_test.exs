@@ -19,14 +19,20 @@ defmodule Membrane.WebRTC.EndpointBinTest do
   test "creating sendonly EndpointBin with inbound tracks raises an error" do
     track = Utils.get_track()
     options = %EndpointBin{direction: :sendonly, inbound_tracks: [track]}
-    assert_raise RuntimeError, fn -> EndpointBin.handle_init(options) end
+
+    assert_raise RuntimeError,
+                 ~r/Cannot add inbound tracks when EndpointBin is set to :sendonly./,
+                 fn -> EndpointBin.handle_init(options) end
   end
 
   @tag :debug
   test "creating recvonly EndpointBin with outbound tracks raises an error" do
     track = Utils.get_track()
     options = %EndpointBin{direction: :recvonly, outbound_tracks: [track]}
-    assert_raise RuntimeError, fn -> EndpointBin.handle_init(options) end
+
+    assert_raise RuntimeError,
+                 ~r/Cannot add outbound tracks when EndpointBin is set to :recvonly./,
+                 fn -> EndpointBin.handle_init(options) end
   end
 
   Enum.map([:recvonly, :sendrecv], fn direction ->
@@ -63,13 +69,35 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     end
   end)
 
+  test "EndpointBin raises when peer offers outbound tracks on its own" do
+    track = Utils.get_track()
+    offer = File.read!("test/fixtures/2_outgoing_tracks_sdp.txt")
+    sdp_offer_msg = {:signal, {:sdp_offer, offer, %{}}}
+    handshake_init_data_not = {:handshake_init_data, 1, <<>>}
+    options = %EndpointBin{direction: :sendrecv, outbound_tracks: [track]}
+
+    {{:ok, _spec}, state} = EndpointBin.handle_init(options)
+    {:ok, state} = EndpointBin.handle_notification(handshake_init_data_not, nil, nil, state)
+
+    assert_raise RuntimeError,
+                 "Received new outbound tracks in SDP offer which is not allowed.",
+                 fn -> EndpointBin.handle_other(sdp_offer_msg, nil, state) end
+  end
+
   test "sendonly EndpointBin raises when receives RTP stream" do
     options = %EndpointBin{direction: :sendonly}
     {{:ok, _spec}, state} = EndpointBin.handle_init(options)
 
-    assert_raise RuntimeError, fn ->
-      EndpointBin.handle_notification({:new_rtp_stream, 1234, 96, []}, nil, nil, state)
-    end
+    assert_raise RuntimeError,
+                 ~r/Received new RTP stream but EndpointBin is set to :sendonly./,
+                 fn ->
+                   EndpointBin.handle_notification(
+                     {:new_rtp_stream, 1234, 96, []},
+                     nil,
+                     nil,
+                     state
+                   )
+                 end
   end
 
   defp test_generating_proper_sdp_answer(endpoint_bin_direction, expected_media_direction) do
