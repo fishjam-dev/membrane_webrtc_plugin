@@ -1,7 +1,5 @@
 defmodule Membrane.WebRTC.SDP do
-  @moduledoc """
-  Module containing helper functions for creating SPD offer.
-  """
+  @moduledoc false
 
   alias ExSDP.Attribute.{RTPMapping, MSID, SSRC, FMTP, Group}
   alias ExSDP.{ConnectionData, Media}
