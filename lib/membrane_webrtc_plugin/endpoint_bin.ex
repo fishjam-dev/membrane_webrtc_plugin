@@ -837,19 +837,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     {[], state}
   end
 
-  defp add_inbound_tracks(new_tracks, %State{endpoint_direction: :sendonly} = state) do
-    Membrane.Logger.debug("""
-    Got new incoming tracks in SDP offer but EndpointBin is set to `:sendonly`. Disabling.
-    """)
-
-    new_tracks = Enum.map(new_tracks, &%Track{&1 | status: :disabled})
-    new_track_id_to_track = Map.new(new_tracks, &{&1.id, &1})
-    # we still need to add disabled tracks to state to include them in subsequent SDP
-    # offers/answers. This is required by WebRTC
-    state = Map.update!(state, :inbound_tracks, &Map.merge(&1, new_track_id_to_track))
-    {[], state}
-  end
-
   defp add_inbound_tracks(new_tracks, state) do
     new_track_id_to_track = Map.new(new_tracks, &{&1.id, &1})
     state = Map.update!(state, :inbound_tracks, &Map.merge(&1, new_track_id_to_track))

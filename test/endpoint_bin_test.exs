@@ -25,7 +25,6 @@ defmodule Membrane.WebRTC.EndpointBinTest do
                  fn -> EndpointBin.handle_init(options) end
   end
 
-  @tag :debug
   test "creating recvonly EndpointBin with outbound tracks raises an error" do
     track = Utils.get_track()
     options = %EndpointBin{direction: :recvonly, outbound_tracks: [track]}
@@ -56,6 +55,26 @@ defmodule Membrane.WebRTC.EndpointBinTest do
       ]
 
       {:ok, _pid} = Membrane.Testing.Pipeline.start_link(children: children)
+    end
+  end)
+
+  @tag :debug
+  test "adding outbound tracks to :recvonly EndpointBin causes raise" do
+    options = %EndpointBin{direction: :recvonly}
+    {{:ok, _spec}, state} = EndpointBin.handle_init(options)
+    track = Utils.get_track()
+
+    assert_raise RuntimeError, fn ->
+      EndpointBin.handle_other({:add_tracks, [track]}, nil, state)
+    end
+  end
+
+  Enum.map([:sendonly, :sendrecv], fn direction ->
+    test "adding outbound tracks to #{inspect(direction)} EndpointBin passes" do
+      options = %EndpointBin{direction: unquote(direction)}
+      {{:ok, _spec}, state} = EndpointBin.handle_init(options)
+      track = Utils.get_track()
+      assert EndpointBin.handle_other({:add_tracks, [track]}, nil, state)
     end
   end)
 
