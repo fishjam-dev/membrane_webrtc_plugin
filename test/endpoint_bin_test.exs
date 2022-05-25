@@ -12,7 +12,8 @@ defmodule Membrane.WebRTC.EndpointBinTest do
         endpoint: %EndpointBin{direction: unquote(direction)}
       ]
 
-      {:ok, _pid} = Membrane.Testing.Pipeline.start_link(children: children)
+      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
+      Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
     end
   end)
 
@@ -42,7 +43,8 @@ defmodule Membrane.WebRTC.EndpointBinTest do
         endpoint: %EndpointBin{direction: unquote(direction), inbound_tracks: [track]}
       ]
 
-      {:ok, _pid} = Membrane.Testing.Pipeline.start_link(children: children)
+      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
+      :ok = Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
     end
   end)
 
@@ -54,7 +56,8 @@ defmodule Membrane.WebRTC.EndpointBinTest do
         endpoint: %EndpointBin{direction: unquote(direction), outbound_tracks: [track]}
       ]
 
-      {:ok, _pid} = Membrane.Testing.Pipeline.start_link(children: children)
+      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
+      :ok = Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
     end
   end)
 
