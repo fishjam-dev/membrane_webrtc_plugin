@@ -105,10 +105,10 @@ defmodule Membrane.WebRTC.EndpointBin do
                 default: [],
                 description: "Trace context for otel propagation"
               ],
-              telemetry_metadata: [
+              telemetry_label: [
                 spec: [{atom(), term()}],
                 default: [],
-                description: "Value passed to Membrane.Telemetry events in metadata"
+                description: "Label passed to Membrane.TelemetryMetrics functions"
               ]
 
   def_input_pad :input,
@@ -188,7 +188,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             integrated_turn_servers: [any()],
             component_path: String.t(),
             simulcast?: boolean(),
-            telemetry_metadata: [{atom(), any()}],
+            telemetry_label: [{atom(), any()}],
             ice: %{
               restarting?: boolean(),
               waiting_restart?: boolean(),
@@ -214,7 +214,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               integrated_turn_servers: [],
               component_path: "",
               simulcast?: true,
-              telemetry_metadata: [],
+              telemetry_label: [],
               ice: %{
                 restarting?: false,
                 waiting_restart?: false,
@@ -238,7 +238,8 @@ defmodule Membrane.WebRTC.EndpointBin do
     children = %{
       ice: %ICE.Endpoint{
         integrated_turn_options: opts.integrated_turn_options,
-        handshake_opts: opts.handshake_opts
+        handshake_opts: opts.handshake_opts,
+        telemetry_label: opts.telemetry_label
       },
       rtp: %Membrane.RTP.SessionBin{
         secure?: true,
@@ -288,7 +289,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         extensions: Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new())),
         component_path: Membrane.ComponentPath.get_formatted(),
         simulcast?: opts.simulcast?,
-        telemetry_metadata: opts.telemetry_metadata,
+        telemetry_label: opts.telemetry_label,
         ice: %{
           restarting?: false,
           waiting_restart?: false,
@@ -408,14 +409,14 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Enum.map(&Extension.as_rtp_extension(state.extensions, &1))
       |> Enum.reject(fn {_name, rtp_module} -> rtp_module == :no_rtp_module end)
 
-    telemetry_metadata = [track_id: "#{track_id}:#{rid}"] ++ state.telemetry_metadata
+    telemetry_label = [track_id: "#{track_id}:#{rid}"] ++ state.telemetry_label
 
     output_pad_options = [
       extensions: ctx.options.extensions,
       rtp_extensions: rtp_extensions,
       clock_rate: rtp_mapping.clock_rate,
       depayloader: depayloader,
-      telemetry_metadata: telemetry_metadata,
+      telemetry_label: telemetry_label,
       encoding: encoding,
       rtcp_fir_interval: rtcp_fir_interval
     ]
