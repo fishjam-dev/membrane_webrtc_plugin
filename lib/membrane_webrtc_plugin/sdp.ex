@@ -5,6 +5,8 @@ defmodule Membrane.WebRTC.SDP do
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.WebRTC.{Extension, Track, Utils}
 
+  require Membrane.Logger
+
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
   @doc """
@@ -188,7 +190,11 @@ defmodule Membrane.WebRTC.SDP do
            inbound_tracks :: [Track.t()], outbound_tracks :: [Track.t()]}
   def get_tracks(sdp, constraints, old_inbound_tracks, outbound_tracks, mid_to_track_id) do
     if Enum.any?(sdp.media, fn mline -> Media.get_attribute(mline, :sendrecv) != nil end) do
-      raise("Tracks with direction :sendrecv are not allowed. Offer: #{inspect(sdp)}")
+      Membrane.Logger.error("""
+      Got offer with :sendrecv tracks: #{inspect(sdp, limit: :infinity, pretty: true)}
+      """)
+
+      raise("Tracks with direction :sendrecv are not allowed in SDP offer.")
     end
 
     {send_only_sdp_media, rest_sdp_media} =
@@ -214,14 +220,14 @@ defmodule Membrane.WebRTC.SDP do
       |> Enum.map(&Track.set_constraints(&1, :inbound, constraints))
       |> split_by_disabled_tracks()
 
-    {same_inbound_tracks, removed_inbound_tracks} =
+    {unchanged_inbound_tracks, removed_inbound_tracks} =
       Enum.split_with(old_inbound_tracks, fn old_track ->
         Map.has_key?(mid_to_track_id, old_track.mid) or old_track.status == :disabled
       end)
 
     removed_inbound_tracks = Enum.map(removed_inbound_tracks, &%{&1 | status: :disabled})
 
-    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_tracks
+    old_inbound_tracks = removed_inbound_tracks ++ unchanged_inbound_tracks
 
     outbound_sdp_tracks = Enum.map(recv_only_sdp_media, &Track.from_sdp_media(&1))
 

@@ -38,8 +38,8 @@ defmodule Membrane.WebRTC.Track do
           mid: binary(),
           rids: [String.t()] | nil,
           rid_to_ssrc: %{},
-          rtp_mapping: [RTPMapping.t()],
-          fmtp: [FMTP.t()],
+          rtp_mapping: RTPMapping.t() | [RTPMapping.t()],
+          fmtp: FMTP.t() | [FMTP.t()],
           extmaps: [Extmap]
         }
 
@@ -56,9 +56,9 @@ defmodule Membrane.WebRTC.Track do
           encoding: encoding,
           mid: non_neg_integer(),
           rids: [String.t()] | nil,
-          rtp_mapping: RTPMapping,
+          rtp_mapping: RTPMapping.t(),
           status: :pending | :ready | :linked | :disabled,
-          fmtp: FMTP,
+          fmtp: FMTP.t(),
           extmaps: [Extmap]
         ) :: t
   def new(type, stream_id, opts \\ []) do
@@ -150,7 +150,6 @@ defmodule Membrane.WebRTC.Track do
     opts = [
       id: id,
       ssrc: ssrc,
-      # encoding: encoding,
       mid: Media.get_attribute(sdp_media, :mid) |> elem(1),
       rids: rids,
       rtp_mapping: Media.get_attributes(sdp_media, :rtpmap),

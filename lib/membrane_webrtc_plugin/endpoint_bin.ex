@@ -857,17 +857,17 @@ defmodule Membrane.WebRTC.EndpointBin do
     {actions, state}
   end
 
-  defp add_tracks(state, _track_type, []), do: state
+  defp add_tracks(state, _tracks_type, []), do: state
 
-  defp add_tracks(state, track_type, tracks) do
+  defp add_tracks(state, tracks_type, tracks) do
     cond do
-      track_type == :inbound_tracks and state.endpoint_direction == :sendonly ->
+      tracks_type == :inbound_tracks and state.endpoint_direction == :sendonly ->
         raise("""
         Cannot add inbound tracks when EndpointBin is set to #{inspect(state.endpoint_direction)}.
         You can add inbound tracks only when EndpointBin is set to :recvonly or :sendrecv.
         """)
 
-      track_type == :outbound_tracks and state.endpoint_direction == :recvonly ->
+      tracks_type == :outbound_tracks and state.endpoint_direction == :recvonly ->
         raise("""
         Cannot add outbound tracks when EndpointBin is set to #{inspect(state.endpoint_direction)}.
         You can add outbound tracks only when EndpointBin is set to :sendonly or :sendrecv.
@@ -878,7 +878,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     end
 
     tracks =
-      case track_type do
+      case tracks_type do
         :outbound_tracks ->
           Track.add_ssrc(
             tracks,
@@ -890,7 +890,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     tracks = Map.new(tracks, &{&1.id, &1})
-    Map.update!(state, track_type, &Map.merge(&1, tracks))
+    Map.update!(state, tracks_type, &Map.merge(&1, tracks))
   end
 
   defp notify_candidates(candidates) do
