@@ -106,7 +106,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                 description: "Trace context for otel propagation"
               ],
               telemetry_label: [
-                spec: [{atom(), term()}],
+                spec: Membrane.TelemetryMetrics.label(),
                 default: [],
                 description: "Label passed to Membrane.TelemetryMetrics functions"
               ]
@@ -188,7 +188,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             integrated_turn_servers: [any()],
             component_path: String.t(),
             simulcast?: boolean(),
-            telemetry_label: [{atom(), any()}],
+            telemetry_label: Membrane.TelemetryMetrics.label(),
             ice: %{
               restarting?: boolean(),
               waiting_restart?: boolean(),
@@ -409,7 +409,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Enum.map(&Extension.as_rtp_extension(state.extensions, &1))
       |> Enum.reject(fn {_name, rtp_module} -> rtp_module == :no_rtp_module end)
 
-    telemetry_label = [track_id: "#{track_id}:#{rid}"] ++ state.telemetry_label
+    telemetry_label = state.telemetry_label ++ [track_id: "#{track_id}:#{rid}"]
 
     output_pad_options = [
       extensions: ctx.options.extensions,
