@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
 
   def project do
@@ -46,7 +46,6 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, github: "membraneframework/ex_sdp"},
-      # {:membrane_rtp_plugin, "~> 0.12.1"},
       {:membrane_rtp_plugin,
        github: "membraneframework/membrane_rtp_plugin",
        branch: "support-telemetry-2",
@@ -55,13 +54,23 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
        github: "membraneframework/membrane_rtp_format",
        branch: "support-telemetry",
        override: true},
-      {:membrane_ice_plugin, "~> 0.10.0"},
+      {:membrane_ice_plugin,
+       github: "membraneframework/membrane_ice_plugin", branch: "support-telemetry"},
       {:membrane_funnel_plugin, "~> 0.6.0"},
-      {:membrane_h264_ffmpeg_plugin, "~> 0.20.0"},
-      {:membrane_rtp_h264_plugin, "~> 0.12.0"},
-      {:ex_libsrtp, "~> 0.3.0"},
-      {:membrane_rtp_vp8_plugin, "~> 0.4.0"},
-      {:membrane_rtp_opus_plugin, "~> 0.5.0"},
+      {:membrane_h264_ffmpeg_plugin, "~> 0.21.0"},
+      {:membrane_rtp_vp8_plugin,
+       github: "membraneframework/membrane_rtp_vp8_plugin",
+       branch: "support-telemetry",
+       override: true},
+      {:membrane_rtp_h264_plugin,
+       github: "membraneframework/membrane_rtp_h264_plugin",
+       branch: "support-telemetry",
+       override: true},
+      {:membrane_rtp_opus_plugin,
+       github: "membraneframework/membrane_rtp_opus_plugin",
+       branch: "support-telemetry",
+       override: true},
+      {:ex_libsrtp, "~> 0.4.0"},
       {:ex_doc, "~> 0.22", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0.0", only: :dev, runtime: false},
       {:credo, "~> 1.4", only: :dev, runtime: false},
