@@ -19,6 +19,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.ICE
   alias Membrane.WebRTC.{Extension, SDP, Track}
+  require Membrane.Logger
   require OpenTelemetry.Tracer, as: Tracer
 
   # we always want to use ICE lite at the moment
@@ -34,6 +35,15 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.id()]}
 
+  @typedoc """
+  Type describing possible media flow directions.
+
+  * `:recvonly` - only receive media from the peer
+  * `:sendonly` - only send media to the peer
+  * `:sendrecv` - both send and receive media from the peer
+  """
+  @type direction() :: :recvonly | :sendonly | :sendrecv
+
   def_options inbound_tracks: [
                 spec: [Membrane.WebRTC.Track.t()],
                 default: [],
@@ -43,6 +53,15 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: [Membrane.WebRTC.Track.t()],
                 default: [],
                 description: "List of initial outbound tracks"
+              ],
+              direction: [
+                spec: direction(),
+                default: :sendrecv,
+                description: """
+                Direction of EndpointBin. Determines whether
+                EndpointBin can send, receive or both send and receive media.
+                For more information refer to t:direction/0.
+                """
               ],
               handshake_opts: [
                 type: :list,
@@ -160,7 +179,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     @typedoc """
     * `simulcast_track_ids` - list of simulcast track ids.
-    * `ssrc_to_track_id` - maps ssrc to track id.
+    * `ssrc_to_track_id` - maps inbound track ssrc to its id.
     If track is a simulcast track it might not be in this list until
     we receive its first RTP packets. This is beacuse simulcast tracks
     don't announce their SSRCs in SDP. Instead, we have to wait for
@@ -172,6 +191,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             log_metadata: Keyword.t(),
             inbound_tracks: %{Track.id() => Track.t()},
             outbound_tracks: %{Track.id() => Track.t()},
+            endpoint_direction: Membrane.WebRTC.EndpointBin.direction(),
             rtcp_sender_report_interval: Membrane.Time.t() | nil,
             candidates: [any()],
             candidate_gathering_state: nil | :in_progress | :done,
@@ -197,6 +217,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               log_metadata: [],
               inbound_tracks: %{},
               outbound_tracks: %{},
+              endpoint_direction: :sendrecv,
               rtcp_sender_report_interval: nil,
               candidates: [],
               candidate_gathering_state: nil,
@@ -271,6 +292,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         log_metadata: opts.log_metadata,
         inbound_tracks: %{},
         outbound_tracks: %{},
+        endpoint_direction: opts.direction,
         rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
         candidates: [],
         candidate_gathering_state: nil,
@@ -419,6 +441,22 @@ defmodule Membrane.WebRTC.EndpointBin do
     state = put_in(state, [:inbound_tracks, track_id], %{track | status: :linked})
 
     {{:ok, spec: spec}, state}
+  end
+
+  @impl true
+  @decorate trace("endpoint_bin.notification.new_rtp_stream",
+              include: [:track_id, :ssrc, [:state, :id]]
+            )
+  def handle_notification(
+        {:new_rtp_stream, ssrc, pt, _rtp_header_extensions},
+        _from,
+        _ctx,
+        %State{endpoint_direction: :sendonly} = _state
+      ) do
+    raise("""
+    Received new RTP stream but EndpointBin is set to :sendonly.
+    RTP stream params: SSRC: #{inspect(ssrc)}, PT: #{inspect(pt)}"
+    """)
   end
 
   @impl true
@@ -621,8 +659,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     answer =
       SDP.create_answer(
-        inbound_tracks: inbound_tracks,
-        outbound_tracks: outbound_tracks,
+        inbound_tracks: Map.values(state.inbound_tracks),
+        outbound_tracks: Map.values(state.outbound_tracks),
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
@@ -785,15 +823,18 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
-    SDP.get_tracks(
-      sdp,
-      state.filter_codecs,
-      state.extensions,
-      old_inbound_tracks,
-      outbound_tracks,
-      mid_to_track_id,
-      state.simulcast?
-    )
+    constraints = %Track.Constraints{
+      codecs_filter: state.filter_codecs,
+      enabled_extensions: state.extensions,
+      simulcast?: state.simulcast?,
+      endpoint_direction: state.endpoint_direction
+    }
+
+    SDP.get_tracks(sdp, constraints, old_inbound_tracks, outbound_tracks, mid_to_track_id)
+  end
+
+  defp add_inbound_tracks([], state) do
+    {[], state}
   end
 
   defp add_inbound_tracks(new_tracks, state) do
@@ -816,9 +857,28 @@ defmodule Membrane.WebRTC.EndpointBin do
     {actions, state}
   end
 
-  defp add_tracks(state, direction, tracks) do
+  defp add_tracks(state, _tracks_type, []), do: state
+
+  defp add_tracks(state, tracks_type, tracks) do
+    cond do
+      tracks_type == :inbound_tracks and state.endpoint_direction == :sendonly ->
+        raise("""
+        Cannot add inbound tracks when EndpointBin is set to #{inspect(state.endpoint_direction)}.
+        You can add inbound tracks only when EndpointBin is set to :recvonly or :sendrecv.
+        """)
+
+      tracks_type == :outbound_tracks and state.endpoint_direction == :recvonly ->
+        raise("""
+        Cannot add outbound tracks when EndpointBin is set to #{inspect(state.endpoint_direction)}.
+        You can add outbound tracks only when EndpointBin is set to :sendonly or :sendrecv.
+        """)
+
+      true ->
+        :ok
+    end
+
     tracks =
-      case direction do
+      case tracks_type do
         :outbound_tracks ->
           Track.add_ssrc(
             tracks,
@@ -830,7 +890,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     tracks = Map.new(tracks, &{&1.id, &1})
-    Map.update!(state, direction, &Map.merge(&1, tracks))
+    Map.update!(state, tracks_type, &Map.merge(&1, tracks))
   end
 
   defp notify_candidates(candidates) do

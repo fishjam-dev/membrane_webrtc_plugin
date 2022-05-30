@@ -1,13 +1,11 @@
 defmodule Membrane.WebRTC.SDP do
-  @moduledoc """
-  Module containing helper functions for creating SPD offer.
-  """
+  @moduledoc false
 
   alias ExSDP.Attribute.{RTPMapping, MSID, SSRC, FMTP, Group}
   alias ExSDP.{ConnectionData, Media}
-  alias Membrane.WebRTC.{Extension, Track}
+  alias Membrane.WebRTC.{Extension, Track, Utils}
 
-  @supported_rids ["l", "m", "h"]
+  require Membrane.Logger
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
@@ -37,7 +35,8 @@ defmodule Membrane.WebRTC.SDP do
     outbound_tracks = Keyword.fetch!(opts, :outbound_tracks)
 
     mids =
-      Enum.map(inbound_tracks ++ outbound_tracks, & &1.mid)
+      (inbound_tracks ++ outbound_tracks)
+      |> Enum.map(& &1.mid)
       |> Enum.sort_by(&String.to_integer/1)
 
     config = %{
@@ -169,248 +168,139 @@ defmodule Membrane.WebRTC.SDP do
   @doc """
   Returns how tracks have changed based on SDP offer.
 
-  Function returns four-element tuple, which contains list of new tracks, list of removed tracks, list of all inbound tracks
+  Function returns four-element tuple, which contains list of new active tracks, list of removed tracks, list of all inbound tracks
   and list of all outbound tracks.
+  New disabled inbound tracks (new tracks but disabled after applying constraints) are in list of all inbound tracks.
 
   Function arguments:
   * sdp - SDP offer
-  * codecs_filter - function which will filter SDP m-line by codecs
-  * enabled_extensions - list of WebRTC extensions that should be enabled for tracks
+  * constraints - track constraints e.g. extensions to use
   * old_inbound_tracks - list of old inbound tracks
   * outbound_tracks - list of outbound_tracks
   * mid_to_track_id - map of mid to track_id for all active inbound_tracks
-  * simulcast? - whether to accept simulcast or not
   """
   @spec get_tracks(
           sdp :: ExSDP.t(),
-          codecs_filter :: ({RTPMapping, FMTP} -> boolean()),
-          enabled_extensions :: [Extension.t()],
+          constraints :: Track.Constraints.t(),
           old_inbound_tracks :: [Track.t()],
           outbound_tracks :: [Track.t()],
-          mid_to_track_id :: %{String.t() => Track.id()},
-          simulcast? :: boolean()
+          mid_to_track_id :: %{String.t() => Track.id()}
         ) ::
           {new_inbound_tracks :: [Track.t()], removed_inbound_tracks :: [Track.t()],
            inbound_tracks :: [Track.t()], outbound_tracks :: [Track.t()]}
-  def get_tracks(
-        sdp,
-        codecs_filter,
-        enabled_extensions,
-        old_inbound_tracks,
-        outbound_tracks,
-        mid_to_track_id,
-        simulcast?
-      ) do
-    send_only_sdp_media = Enum.filter(sdp.media, &(:sendonly in &1.attributes))
+  def get_tracks(sdp, constraints, old_inbound_tracks, outbound_tracks, mid_to_track_id) do
+    if Enum.any?(sdp.media, fn mline -> Media.get_attribute(mline, :sendrecv) != nil end) do
+      Membrane.Logger.error("""
+      Got offer with :sendrecv tracks: #{inspect(sdp, limit: :infinity, pretty: true)}
+      """)
 
+      raise("Tracks with direction :sendrecv are not allowed in SDP offer.")
+    end
+
+    {send_only_sdp_media, rest_sdp_media} =
+      Enum.split_with(sdp.media, &(:sendonly in &1.attributes))
+
+    {recv_only_sdp_media, _rest_sdp_media} =
+      Enum.split_with(rest_sdp_media, &(:recvonly in &1.attributes))
+
+    # TODO should stream_id be the same for all tracks?
     stream_id = Track.stream_id()
 
+    # new_inbound_disabled_tracks are tracks that
+    # peer wanted to send to us but we disabled them
+    # after applying constraints
     {new_inbound_tracks, new_inbound_disabled_tracks} =
-      Enum.map(
-        send_only_sdp_media,
-        &create_track_from_sdp_media(
-          &1,
-          stream_id,
-          codecs_filter,
-          enabled_extensions,
-          mid_to_track_id,
-          simulcast?
-        )
-      )
+      send_only_sdp_media
+      |> Enum.map(fn sdp_media ->
+        {:mid, mid} = Media.get_attribute(sdp_media, :mid)
+        track_id = mid_to_track_id[mid]
+        Track.from_sdp_media(sdp_media, track_id, stream_id)
+      end)
       |> get_new_tracks(old_inbound_tracks)
+      |> Enum.map(&Track.set_constraints(&1, :inbound, constraints))
       |> split_by_disabled_tracks()
 
-    {same_inbound_tracks, removed_inbound_tracks} =
-      update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id)
-
-    old_inbound_tracks = removed_inbound_tracks ++ same_inbound_tracks
-
-    recv_only_sdp_media_data = get_media_by_attribute(sdp, codecs_filter, :recvonly)
-    outbound_tracks = get_outbound_tracks_updated(recv_only_sdp_media_data, outbound_tracks)
-
-    {new_inbound_tracks, removed_inbound_tracks,
-     new_inbound_tracks ++ new_inbound_disabled_tracks ++ old_inbound_tracks, outbound_tracks}
-  end
-
-  defp update_inbound_tracks_status(old_inbound_tracks, mid_to_track_id),
-    do:
+    {unchanged_inbound_tracks, removed_inbound_tracks} =
       Enum.split_with(old_inbound_tracks, fn old_track ->
         Map.has_key?(mid_to_track_id, old_track.mid) or old_track.status == :disabled
       end)
-      |> then(fn {same_tracks, tracks_to_update} ->
-        Enum.map(tracks_to_update, &%{&1 | status: :disabled})
-        |> then(&{same_tracks, &1})
-      end)
 
-  defp encoding_to_atom(encoding_name) do
-    case encoding_name do
-      "opus" -> :OPUS
-      "VP8" -> :VP8
-      "H264" -> :H264
-      encoding -> raise "Not supported encoding: #{encoding}"
+    removed_inbound_tracks = Enum.map(removed_inbound_tracks, &%{&1 | status: :disabled})
+
+    old_inbound_tracks = removed_inbound_tracks ++ unchanged_inbound_tracks
+
+    outbound_sdp_tracks = Enum.map(recv_only_sdp_media, &Track.from_sdp_media(&1))
+
+    if length(outbound_sdp_tracks) > length(outbound_tracks) do
+      raise("Received new outbound tracks in SDP offer which is not allowed.")
     end
+
+    outbound_tracks = update_outbound_tracks(outbound_tracks, outbound_sdp_tracks)
+
+    inbound_tracks = new_inbound_tracks ++ new_inbound_disabled_tracks ++ old_inbound_tracks
+    {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks}
   end
 
-  defp get_media_by_attribute(sdp, codecs_filter, attribute) do
-    media = Enum.filter(sdp.media, &(attribute in &1.attributes))
-    Enum.map(media, &get_mid_type_mappings_from_sdp_media(&1, codecs_filter))
-  end
-
-  defp get_new_tracks(inbound_tracks, old_inbound_tracks) do
-    known_ids = Enum.map(old_inbound_tracks, fn track -> track.id end)
-    Enum.filter(inbound_tracks, &(&1.id not in known_ids))
+  defp get_new_tracks(tracks, old_tracks) do
+    old_track_ids = Enum.map(old_tracks, & &1.id)
+    Enum.filter(tracks, &(&1.id not in old_track_ids))
   end
 
   defp split_by_disabled_tracks(inbound_tracks) do
     Enum.split_with(inbound_tracks, fn %Track{status: status} -> status != :disabled end)
   end
 
-  defp get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter) do
-    media_type = sdp_media.type
-    {:mid, mid} = Media.get_attribute(sdp_media, :mid)
-    result = Enum.find(sdp_media.attributes, &(&1 == :inactive))
-    disabled? = result != nil
+  defp update_outbound_tracks(outbound_tracks, outbound_sdp_tracks) do
+    # this function updates outbound track fields according to the new SDP offer
+    #
+    # explanation: mid of outbound track can change between subsequent SDP offers and different
+    # browsers can have different payload type for the same codec
+    {audio_tracks, video_tracks} = Enum.split_with(outbound_tracks, &(&1.type == :audio))
 
-    rtp_mappings = Media.get_attributes(sdp_media, :rtpmap)
-    fmtp_mappings = Media.get_attributes(sdp_media, :fmtp)
+    {audio_sdp_tracks, video_sdp_tracks} =
+      Enum.split_with(outbound_sdp_tracks, &(&1.type == :audio))
 
-    pt_to_fmtp = Map.new(fmtp_mappings, &{&1.pt, &1})
-    rtp_fmtp_pairs = Enum.map(rtp_mappings, &{&1, Map.get(pt_to_fmtp, &1.payload_type)})
-    new_rtp_fmtp_pairs = Enum.filter(rtp_fmtp_pairs, codecs_filter)
-    extmaps = Media.get_attributes(sdp_media, :extmap)
+    audio_tracks = do_update_outbound_tracks(audio_tracks, audio_sdp_tracks)
+    video_tracks = do_update_outbound_tracks(video_tracks, video_sdp_tracks)
 
-    if new_rtp_fmtp_pairs === [] do
-      raise "All payload types in SDP offer are unsupported"
-    else
-      %{
-        rtp_fmtp_mappings: new_rtp_fmtp_pairs,
-        mid: mid,
-        media_type: media_type,
-        disabled?: disabled?,
-        extmaps: extmaps
-      }
-    end
+    audio_tracks ++ video_tracks
   end
 
-  defp get_outbound_tracks_updated(outbound_media_data, outbound_tracks) do
-    audio_tracks = update_outbound_tracks_by_type(outbound_media_data, outbound_tracks, :audio)
+  defp do_update_outbound_tracks(outbound_tracks, outbound_sdp_tracks) do
+    sort_by_mid = &if &1.mid != nil, do: String.to_integer(&1.mid), else: nil
 
-    video_tracks = update_outbound_tracks_by_type(outbound_media_data, outbound_tracks, :video)
+    outbound_tracks = Enum.sort_by(outbound_tracks, sort_by_mid)
+    outbound_sdp_tracks = Enum.sort_by(outbound_sdp_tracks, sort_by_mid)
 
-    updated_outbound_tracks = Map.merge(audio_tracks, video_tracks)
-    Map.values(updated_outbound_tracks)
-  end
-
-  # As the mid of outbound_track can change between SDP offers and different browser can have
-  # different payload_type for the same codec, so after receiving each sdp offer we update each outbound_track rtp_mapping and mid
-  # based on data we receive in sdp offer
-  defp update_outbound_tracks_by_type(media_data, tracks, type) do
-    sort_mid = &if &1.mid != nil, do: String.to_integer(&1.mid), else: nil
-
-    media_data =
-      media_data
-      |> Enum.filter(&(&1.media_type === type))
-      |> Enum.sort_by(sort_mid)
-
-    tracks = tracks |> Enum.filter(&(&1.type === type)) |> Enum.sort_by(sort_mid)
-
-    Enum.zip(media_data, tracks)
-    |> Map.new(fn {media, track} ->
-      {track.id, update_mapping_and_mid_for_track(track, media)}
+    outbound_tracks
+    |> Enum.zip(outbound_sdp_tracks)
+    |> Enum.map(fn {track, sdp_track} ->
+      update_outbound_track(track, sdp_track)
     end)
   end
 
-  defp update_mapping_and_mid_for_track(track, mappings) do
-    encoding_string = encoding_name_to_string(track.encoding)
+  defp update_outbound_track(track, sdp_track) do
+    encoding_string = Utils.encoding_name_to_string(track.encoding)
 
-    mapping =
-      Enum.find(mappings.rtp_fmtp_mappings, fn {rtp, _fmtp} ->
-        rtp.encoding === encoding_string
+    rtp_fmtp_pairs = Utils.pair_rtp_mappings_with_fmtp(sdp_track)
+
+    selected_rtp_fmtp_pair =
+      Enum.find(rtp_fmtp_pairs, fn {rtp, _fmtp} ->
+        rtp.encoding == encoding_string
       end)
 
-    if mapping === nil do
-      %{track | mid: mappings.mid, status: :disabled}
+    if selected_rtp_fmtp_pair == nil do
+      %{track | mid: sdp_track.mid, status: :disabled}
     else
-      {rtp, fmtp} = mapping
+      {rtp, fmtp} = selected_rtp_fmtp_pair
 
       extmaps =
-        Enum.filter(mappings.extmaps, fn extmap ->
+        Enum.filter(sdp_track.extmaps, fn extmap ->
           Enum.any?(track.extmaps, &(&1.uri == extmap.uri))
         end)
 
-      %{track | mid: mappings.mid, rtp_mapping: rtp, fmtp: fmtp, extmaps: extmaps}
+      %Track{track | mid: sdp_track.mid, rtp_mapping: rtp, fmtp: fmtp, extmaps: extmaps}
     end
-  end
-
-  defp encoding_name_to_string(encoding_name) do
-    case(encoding_name) do
-      :VP8 -> "VP8"
-      :H264 -> "H264"
-      :OPUS -> "opus"
-      x -> to_string(x)
-    end
-  end
-
-  defp create_track_from_sdp_media(
-         sdp_media,
-         stream_id,
-         codecs_filter,
-         enabled_extensions,
-         mid_to_track_id,
-         simulcast?
-       ) do
-    media_type = sdp_media.type
-
-    rids =
-      sdp_media
-      |> Media.get_attributes("rid")
-      |> Enum.map(fn {_attr, rid} ->
-        rid |> String.split(" ", parts: 2) |> hd()
-      end)
-
-    %{rtp_fmtp_mappings: [{rtp, fmtp} | _], mid: mid, disabled?: disabled} =
-      get_mid_type_mappings_from_sdp_media(sdp_media, codecs_filter)
-
-    rids = if(rids == [], do: nil, else: rids)
-
-    disabled =
-      cond do
-        # if simulcast was offered but we don't accept it, turn track off
-        # this is not compliant with WebRTC standard as we should only
-        # remove simulcast attributes and be prepared to receive one
-        # encoding but in such a case browser changes SSRC after ICE restart
-        # and we cannot handle this at the moment
-        rids != nil and simulcast? == false -> true
-        # enforce rid values
-        is_list(rids) and Enum.any?(rids, &(&1 not in @supported_rids)) -> true
-        true -> disabled
-      end
-
-    ssrc = Media.get_attribute(sdp_media, :ssrc)
-    # this function is being called only for inbound media
-    # therefore, if SSRC is `nil` `sdp_media` must represent simulcast track
-    ssrc = if ssrc == nil, do: [], else: ssrc.id
-
-    encoding = encoding_to_atom(rtp.encoding)
-
-    supported_extmaps =
-      sdp_media
-      |> Media.get_attributes(:extmap)
-      |> Enum.filter(&Extension.supported?(enabled_extensions, &1, encoding))
-
-    opts = [
-      id: Map.get(mid_to_track_id, mid),
-      ssrc: ssrc,
-      encoding: encoding,
-      mid: mid,
-      rids: rids,
-      rtp_mapping: rtp,
-      fmtp: fmtp,
-      status: if(disabled, do: :disabled, else: :ready),
-      extmaps: supported_extmaps
-    ]
-
-    Track.new(media_type, stream_id, opts)
   end
 
   @doc """
