@@ -55,9 +55,9 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_rtp_h264_plugin, "~> 0.13.0"},
       {:membrane_rtp_opus_plugin, "~> 0.6.0"},
       {:ex_libsrtp, "~> 0.4.0"},
-      {:ex_doc, "~> 0.22", only: :dev, runtime: false},
-      {:dialyxir, "~> 1.0.0", only: :dev, runtime: false},
-      {:credo, "~> 1.4", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.28", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.1", only: :dev, runtime: false},
+      {:credo, "~> 1.6", only: :dev, runtime: false},
 
       # Otel
       {:opentelemetry_api, "~> 0.6.0"},
@@ -82,6 +82,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       main: "readme",
       extras: ["README.md", "LICENSE"],
       source_ref: "v#{@version}",
+      formatters: ["html"],
       nest_modules_by_prefix: [Membrane.WebRTC]
     ]
   end
