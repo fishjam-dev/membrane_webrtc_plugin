@@ -13,7 +13,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   use Membrane.Bin
   use Bunch
-  use OpenTelemetryDecorator
 
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
@@ -21,6 +20,8 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias Membrane.WebRTC.{Extension, SDP, Track}
   require Membrane.Logger
   require OpenTelemetry.Tracer, as: Tracer
+
+  require Membrane.OpenTelemetry
 
   # we always want to use ICE lite at the moment
   @ice_lite true
@@ -255,6 +256,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       ])
 
     create_or_join_otel_context(opts, trace_metadata)
+    Membrane.OpenTelemetry.register()
+    Membrane.OpenTelemetry.start_span("endpoint_bin_lifespan")
 
     children = %{
       ice: %ICE.Endpoint{
@@ -327,16 +330,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.pad_added.input",
-              include: [
-                [:mapping, :clock_rate],
-                [:mapping, :payload_type],
-                :encoding,
-                :ssrc,
-                :track_id,
-                [:state, :id]
-              ]
-            )
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     # TODO: check this one
     %{use_payloader?: use_payloader?} = ctx.options
@@ -395,15 +388,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.pad_added.output",
-              include: [
-                [:rtp_mapping, :clock_rate],
-                [:rtp_mapping, :payload_type],
-                :ssrc,
-                :track_id,
-                [:state, :id]
-              ]
-            )
   def handle_pad_added(Pad.ref(:output, {track_id, rid}) = pad, ctx, state) do
     %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
       track = Map.fetch!(state.inbound_tracks, track_id)
@@ -457,9 +441,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.new_rtp_stream",
-              include: [:track_id, :ssrc, [:state, :id]]
-            )
   def handle_notification(
         {:new_rtp_stream, ssrc, pt, _rtp_header_extensions},
         _from,
@@ -473,9 +454,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.new_rtp_stream",
-              include: [:track_id, :ssrc, [:state, :id]]
-            )
   def handle_notification(
         {:new_rtp_stream, ssrc, _pt, rtp_header_extensions},
         _from,
@@ -541,17 +519,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.handle_init_data",
-              include: [[:state, :id]]
-            )
   def handle_notification({:handshake_init_data, _component_id, fingerprint}, _from, _ctx, state) do
     {:ok, %{state | dtls_fingerprint: {:sha256, hex_dump(fingerprint)}}}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.local_credentials",
-              include: [[:state, :ice, :first?], [:state, :id]]
-            )
   def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
@@ -568,44 +540,40 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.new_candidate_full",
-              include: [[:state, :id]]
-            )
   def handle_notification({:new_candidate_full, cand}, _from, _ctx, state) do
+    Membrane.OpenTelemetry.add_event("ice_restart", :local_candidate, candidate: cand)
     state = Map.update!(state, :candidates, &[cand | &1])
     {{:ok, notify_candidates([cand])}, state}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.candidate_gathering_done",
-              include: [[:state, :id]]
-            )
   def handle_notification(:candidate_gathering_done, _from, _ctx, state) do
+    Membrane.OpenTelemetry.add_event("ice_restart", :candidate_gathering_done, [])
     {:ok, %{state | candidate_gathering_state: :done}}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.vad", include: [[:state, :id]])
-  def handle_notification({:vad, _val} = msg, _from, _ctx, state) do
+  def handle_notification({:vad, val} = msg, _from, _ctx, state) do
+    Membrane.OpenTelemetry.add_event("endpoint_bin_lifespan", :vad, value: val)
     {{:ok, notify: msg}, state}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.connection_failed",
-              include: [[:state, :id]]
-            )
   def handle_notification({:connection_failed, _stream_id, _component_id}, _from, _ctx, state) do
+    Membrane.OpenTelemetry.add_event("ice_restart", :connection_failed, [])
+    Membrane.OpenTelemetry.end_span("ice_restart")
+
     state = %{state | ice: %{state.ice | restarting?: false}}
     {action, state} = maybe_restart_ice(state, true)
     {{:ok, action}, state}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.connection_ready",
-              include: [[:state, :ice, :restarting?], [:state, :id]]
-            )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
       when state.ice.restarting? do
+    Membrane.OpenTelemetry.add_event("ice_restart", :connection_ready, [])
+    Membrane.OpenTelemetry.end_span("ice_restart")
+
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
 
     new_outbound_tracks =
@@ -626,30 +594,22 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.connection_ready",
-              include: [[:state, :ice, :restarting?], [:state, :id]]
-            )
   def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state),
     do: {:ok, state}
 
   @impl true
-  @decorate trace("endpoint_bin.notification.integrated_turn_servers",
-              include: [[:state, :id]]
-            )
   def handle_notification({:udp_integrated_turn, turn}, _from, _ctx, state) do
     state = %{state | integrated_turn_servers: [turn] ++ state.integrated_turn_servers}
     {:ok, state}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.notification.ignored_notification",
-              include: [[:state, :id]]
-            )
   def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
 
   @impl true
-  @decorate trace("endpoint_bin.other.sdp_offer", include: [[:state, :id]])
   def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
+    Membrane.OpenTelemetry.add_event("ice_restart", :sdp_offer, sdp: sdp)
+
     {:ok, sdp} = sdp |> ExSDP.parse()
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
@@ -704,17 +664,19 @@ defmodule Membrane.WebRTC.EndpointBin do
         set_remote_credentials(sdp) ++
         actions
 
+    Membrane.OpenTelemetry.add_event("ice_restart", :sdp_answer, sdp: to_string(answer))
+
     {{:ok, actions}, state}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.other.candidate", include: [[:state, :id]])
   def handle_other({:signal, {:candidate, candidate}}, _ctx, state) do
-    {{:ok, forward: {:ice, {:set_remote_candidate, "a=" <> candidate, 1}}}, state}
+    candidate = "a=" <> candidate
+    Membrane.OpenTelemetry.add_event("ice_restart", :remote_candidate, candidate: candidate)
+    {{:ok, forward: {:ice, {:set_remote_candidate, candidate, 1}}}, state}
   end
 
   @impl true
-  @decorate trace("endpoint_bin.other.renegotiate_tracks", include: [[:state, :id]])
   def handle_other({:signal, :renegotiate_tracks}, _ctx, state) do
     {action, state} =
       cond do
@@ -737,9 +699,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.other.add_tracks",
-              include: [[:state, :component_path], [:state, :id]]
-            )
   def handle_other({:add_tracks, tracks}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
@@ -773,7 +732,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  @decorate trace("endpoint_bin.other.remove_tracks", include: [[:state, :id]])
   def handle_other({:remove_tracks, tracks_to_remove}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
@@ -796,6 +754,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         else: state
 
     if not state.ice.restarting? and state.ice.waiting_restart? do
+      Membrane.OpenTelemetry.start_span("ice_restart", %{parent: "endpoint_bin_lifespan"})
+
       state = %{state | ice: %{state.ice | restarting?: true, waiting_restart?: false}}
       outbound_tracks = change_tracks_status(state, :pending, :ready)
       state = %{state | outbound_tracks: outbound_tracks}
@@ -818,6 +778,10 @@ defmodule Membrane.WebRTC.EndpointBin do
     }
 
     actions = [notify: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}]
+
+    if not state.ice.restarting?,
+      do: Membrane.OpenTelemetry.start_span("ice_restart", %{parent: "endpoint_bin_lifespan"})
+
     state = Map.update!(state, :ice, &%{&1 | restarting?: true})
 
     {actions, state}

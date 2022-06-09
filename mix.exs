@@ -42,6 +42,9 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
   defp deps do
     [
+      {:membrane_opentelemetry,
+       github: "membraneframework/membrane_opentelemetry",
+       branch: "basic-functionalities-implementation"},
       {:membrane_core, "~> 0.10.0"},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
@@ -60,9 +63,8 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:credo, "~> 1.4", only: :dev, runtime: false},
 
       # Otel
-      {:opentelemetry_api, "~> 0.6.0"},
-      {:opentelemetry, "~> 0.6.0"},
-      {:open_telemetry_decorator, "~> 0.5.4"}
+      {:opentelemetry_api, "~> 1.0"},
+      {:opentelemetry, "~> 1.0"},
     ]
   end
 
