@@ -482,8 +482,13 @@ defmodule Membrane.WebRTC.EndpointBin do
               state.extensions
             )
 
-          if resolved_rtp_extensions.mid == <<>>,
-            do: raise("No MID extension for RTP stream #{inspect(ssrc)}")
+          if Map.get(resolved_rtp_extensions, :mid, <<>>) == <<>> do
+            raise """
+            No MID extension for RTP stream #{inspect(ssrc)}!
+            Such streams are not supported. It is possible that it comes from an outdated browser.
+            The browser known to send such stream is Safari in version older than 15.4
+            """
+          end
 
           simulcast_track.mid == resolved_rtp_extensions.mid
         end)
