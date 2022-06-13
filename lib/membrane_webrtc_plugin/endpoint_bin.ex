@@ -574,9 +574,13 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state)
+  def handle_notification({:connection_ready, stream_id, component_id}, _from, _ctx, state)
       when state.ice.restarting? do
-    Membrane.OpenTelemetry.add_event("ice_restart", :connection_ready, [])
+    Membrane.OpenTelemetry.add_event("ice_restart", :connection_ready,
+      stream_id: stream_id,
+      component_id: component_id
+    )
+
     Membrane.OpenTelemetry.end_span("ice_restart")
 
     outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
@@ -619,6 +623,21 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
+
+    for {label, tracks} <- [
+          new_inbound_tracks: new_inbound_tracks,
+          removed_inbound_tracks: removed_inbound_tracks,
+          inbound_tracks: inbound_tracks,
+          outbound_tracks: outbound_tracks
+        ] do
+      if tracks != [] do
+        Membrane.OpenTelemetry.set_attribute(
+          "ice_restart",
+          label,
+          Enum.map(tracks, &ot_track_data/1)
+        )
+      end
+    end
 
     state =
       removed_inbound_tracks
@@ -751,6 +770,16 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     {{:ok, actions}, state}
   end
+
+  defp ot_track_data(%Membrane.WebRTC.Track{rids: nil} = track),
+    do: "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}}"
+
+  defp ot_track_data(%Membrane.WebRTC.Track{} = track) do
+    rids = Enum.join(track.rids, ", ")
+    "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}, rids: [#{rids}]}"
+  end
+
+  0
 
   defp maybe_restart_ice(state, set_waiting_restart? \\ false) do
     state =
