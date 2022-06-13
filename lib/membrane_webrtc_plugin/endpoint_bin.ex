@@ -785,8 +785,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}, rids: [#{rids}]}"
   end
 
-  0
-
   defp maybe_restart_ice(state, set_waiting_restart? \\ false) do
     state =
       if set_waiting_restart?,
