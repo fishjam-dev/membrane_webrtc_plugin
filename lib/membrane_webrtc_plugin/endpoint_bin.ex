@@ -677,8 +677,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     answer =
       SDP.create_answer(
-        inbound_tracks: Map.values(state.inbound_tracks),
-        outbound_tracks: Map.values(state.outbound_tracks),
+        inbound_tracks: inbound_tracks,
+        outbound_tracks: outbound_tracks,
         ice_ufrag: state.ice.ufrag,
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
