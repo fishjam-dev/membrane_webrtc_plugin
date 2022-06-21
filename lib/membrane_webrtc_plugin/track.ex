@@ -238,6 +238,15 @@ defmodule Membrane.WebRTC.Track do
     }
   end
 
+  @spec to_otel_data(t()) :: string()
+  def to_otel_data(%__MODULE__{rids: nil} = track),
+    do: "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}}"
+
+  def to_otel_data(%__MODULE__{} = track) do
+    rids = Enum.join(track.rids, ", ")
+    "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}, rids: [#{rids}]}"
+  end
+
   defp encoding_to_atom(encoding_name) do
     case encoding_name do
       "opus" -> :OPUS
