@@ -19,8 +19,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias Membrane.ICE
   alias Membrane.WebRTC.{Extension, SDP, Track}
   require Membrane.Logger
-  require OpenTelemetry.Tracer, as: Tracer
-
   require Membrane.OpenTelemetry
 
   # we always want to use ICE lite at the moment
@@ -126,6 +124,11 @@ defmodule Membrane.WebRTC.EndpointBin do
                 spec: :list | any(),
                 default: [],
                 description: "Trace context for otel propagation"
+              ],
+              parent_span: [
+                spec: :opentelemetry.span_ctx(),
+                default: nil,
+                description: "Parent span of #{@lifespan_name}"
               ],
               telemetry_label: [
                 spec: Membrane.TelemetryMetrics.label(),
@@ -257,15 +260,18 @@ defmodule Membrane.WebRTC.EndpointBin do
         {:"library.version", "semver:#{Application.spec(:membrane_webrtc_plugin, :vsn)}"}
       ])
 
-    create_or_join_otel_context(opts, trace_metadata)
+    if opts.trace_context != [], do: Membrane.OpenTelemetry.attach(opts.trace_context)
     Membrane.OpenTelemetry.register()
     Membrane.OpenTelemetry.start_span(@lifespan_name)
+    Membrane.OpenTelemetry.set_attributes(@lifespan_name, trace_metadata)
 
     children = %{
       ice: %ICE.Endpoint{
         integrated_turn_options: opts.integrated_turn_options,
         handshake_opts: opts.handshake_opts,
-        telemetry_label: opts.telemetry_label
+        telemetry_label: opts.telemetry_label,
+        trace_context: opts.trace_context,
+        parent_span: Membrane.OpenTelemetry.get_span(@lifespan_name)
       },
       rtp: %Membrane.RTP.SessionBin{
         secure?: true,
@@ -567,7 +573,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_notification({:connection_failed, _stream_id, _component_id}, _from, _ctx, state) do
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_name, :connection_failed, [])
+    Membrane.OpenTelemetry.add_event(@ice_restart_span_name, :connection_failed)
     Membrane.OpenTelemetry.end_span(@ice_restart_span_name)
 
     state = %{state | ice: %{state.ice | restarting?: false}}
@@ -792,7 +798,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         else: state
 
     if not state.ice.restarting? and state.ice.waiting_restart? do
-      Membrane.OpenTelemetry.start_span(@ice_restart_span_name, %{parent: @lifespan_name})
+      Membrane.OpenTelemetry.start_span(@ice_restart_span_name, parent_name: @lifespan_name)
 
       state = %{state | ice: %{state.ice | restarting?: true, waiting_restart?: false}}
       outbound_tracks = change_tracks_status(state, :pending, :ready)
@@ -818,7 +824,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     actions = [notify: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}]
 
     if not state.ice.restarting?,
-      do: Membrane.OpenTelemetry.start_span(@ice_restart_span_name, %{parent: @lifespan_name})
+      do: Membrane.OpenTelemetry.start_span(@ice_restart_span_name, parent_name: @lifespan_name)
 
     state = Map.update!(state, :ice, &%{&1 | restarting?: true})
 
@@ -943,33 +949,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
       :error ->
         nil
-    end
-  end
-
-  defp create_or_join_otel_context(opts, trace_metadata) do
-    case opts.trace_context do
-      [] ->
-        root_span = Tracer.start_span("endpoint_bin")
-        parent_ctx = Tracer.set_current_span(root_span)
-        otel_ctx = OpenTelemetry.Ctx.attach(parent_ctx)
-        OpenTelemetry.Span.set_attributes(root_span, trace_metadata)
-        OpenTelemetry.Span.end_span(root_span)
-        OpenTelemetry.Ctx.attach(otel_ctx)
-        [otel_ctx]
-
-      [ctx | _] ->
-        OpenTelemetry.Ctx.attach(ctx)
-        [ctx]
-
-      ctx ->
-        OpenTelemetry.Ctx.attach(ctx)
-        root_span = Tracer.start_span("endpoint_bin")
-        parent_ctx = Tracer.set_current_span(root_span)
-        otel_ctx = OpenTelemetry.Ctx.attach(parent_ctx)
-        OpenTelemetry.Span.set_attributes(root_span, trace_metadata)
-        OpenTelemetry.Span.end_span(root_span)
-        OpenTelemetry.Ctx.attach(otel_ctx)
-        otel_ctx
     end
   end
 end
