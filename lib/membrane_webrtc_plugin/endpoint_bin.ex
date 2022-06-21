@@ -23,7 +23,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   # we always want to use ICE lite at the moment
   @ice_lite true
-  @life_span "endpoint_bin.lifespan"
+  @life_span "endpoint_bin.life_span"
   @ice_restart_span "endpoint_bin.ice_restart"
 
   @type signal_message ::
