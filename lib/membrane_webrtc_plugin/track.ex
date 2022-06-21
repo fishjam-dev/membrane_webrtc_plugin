@@ -238,7 +238,7 @@ defmodule Membrane.WebRTC.Track do
     }
   end
 
-  @spec to_otel_data(t()) :: string()
+  @spec to_otel_data(t()) :: String.t()
   def to_otel_data(%__MODULE__{rids: nil} = track),
     do: "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}}"
 
