@@ -262,7 +262,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     if opts.trace_context != [], do: Membrane.OpenTelemetry.attach(opts.trace_context)
     Membrane.OpenTelemetry.register()
-    start_span_opts = if opts.parent_span, do: [parent_name: opts.parent_span], else: []
+    start_span_opts = if opts.parent_span, do: [parent: opts.parent_span], else: []
     Membrane.OpenTelemetry.start_span(@life_span, start_span_opts)
     Membrane.OpenTelemetry.set_attributes(@life_span, trace_metadata)
 
