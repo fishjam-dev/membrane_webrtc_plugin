@@ -42,13 +42,14 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
   defp deps do
     [
+      {:membrane_opentelemetry, github: "membraneframework/membrane_opentelemetry"},
       {:membrane_core, "~> 0.10.0"},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, "~> 0.7.0"},
       {:membrane_rtp_plugin, "~> 0.14.0"},
       {:membrane_rtp_format, "~> 0.5.0"},
-      {:membrane_ice_plugin, "~> 0.12.0"},
+      {:membrane_ice_plugin, github: "membraneframework/membrane_ice_plugin"},
       {:membrane_funnel_plugin, "~> 0.6.0"},
       {:membrane_h264_ffmpeg_plugin, "~> 0.21.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.6.0"},
@@ -60,9 +61,8 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:credo, "~> 1.6", only: :dev, runtime: false},
 
       # Otel
-      {:opentelemetry_api, "~> 0.6.0"},
-      {:opentelemetry, "~> 0.6.0"},
-      {:open_telemetry_decorator, "~> 0.5.4"}
+      {:opentelemetry_api, "~> 1.0"},
+      {:opentelemetry, "~> 1.0"}
     ]
   end
 
