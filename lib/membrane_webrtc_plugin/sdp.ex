@@ -123,6 +123,8 @@ defmodule Membrane.WebRTC.SDP do
     media
     |> Extension.add_to_media(extensions, track.extmaps, direction, pt)
     |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} ccm fir"))
+    |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} nack"))
+    |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} nack pli"))
     |> Media.add_attribute(:rtcp_rsize)
   end
 

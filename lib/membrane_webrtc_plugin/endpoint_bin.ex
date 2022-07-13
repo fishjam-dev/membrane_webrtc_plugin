@@ -173,15 +173,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         returns a depayloading filter's definition that can be attached to the output pad
         to work the same way as with the option set to true.
         """
-      ],
-      rtcp_fir_interval: [
-        spec: Membrane.Time.t() | nil,
-        default: Membrane.Time.second(),
-        description: """
-        Defines how often FIR should be sent.
-
-        For more information refer to RFC 5104 section 4.3.1.
-        """
       ]
     ]
 
@@ -253,7 +244,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_init(opts) do
+  def handle_init(%__MODULE__{} = opts) do
     trace_metadata =
       Keyword.merge(opts.trace_metadata, [
         {:"library.language", :erlang},
@@ -373,25 +364,17 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
-    # link sender reports's pad only if we are going to generate the reports
-    links =
-      if state.rtcp_sender_report_interval do
-        [
-          link(:rtp)
-          |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
-          |> to(:ice_funnel)
-        ]
-      else
-        []
-      end ++
-        [
-          link_bin_input(pad)
-          |> then(encoding_specific_links)
-          |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
-          |> to(:rtp)
-          |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
-          |> to(:ice_funnel)
-        ]
+    links = [
+      link(:rtp)
+      |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
+      |> to(:ice_funnel),
+      link_bin_input(pad)
+      |> then(encoding_specific_links)
+      |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
+      |> to(:rtp)
+      |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
+      |> to(:ice_funnel)
+    ]
 
     {{:ok, spec: %ParentSpec{links: links}}, state}
   end
@@ -406,8 +389,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     ssrc = if rid, do: Map.fetch!(track.rid_to_ssrc, rid), else: ssrc
 
     %{
-      use_depayloader?: use_depayloader?,
-      rtcp_fir_interval: rtcp_fir_interval
+      use_depayloader?: use_depayloader?
     } = ctx.options
 
     depayloader =
@@ -432,8 +414,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       clock_rate: rtp_mapping.clock_rate,
       depayloader: depayloader,
       telemetry_label: telemetry_label,
-      encoding: encoding,
-      rtcp_fir_interval: rtcp_fir_interval
+      encoding: encoding
     ]
 
     spec = %ParentSpec{
