@@ -515,6 +515,13 @@ defmodule Membrane.WebRTC.EndpointBin do
         state
       else
         # simulcast track
+        if is_nil(rid) do
+          raise """
+          No RID extension found for RTP stream #{inspect(ssrc)}!
+          Only RID-based simulcast is supported. Ensure RID extension is enabled and supported by the WebRTC client
+          """
+        end
+
         track = %Track{
           track
           | ssrc: [ssrc | track.ssrc],
