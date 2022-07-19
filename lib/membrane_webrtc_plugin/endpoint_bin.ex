@@ -343,7 +343,8 @@ defmodule Membrane.WebRTC.EndpointBin do
       encoding: encoding,
       clock_rate: mapping.clock_rate,
       payload_type: mapping.payload_type,
-      rtp_extension_mapping: rtp_extension_mapping
+      rtp_extension_mapping: rtp_extension_mapping,
+      telemetry_label: state.telemetry_label
     ]
 
     encoding_specific_links =
