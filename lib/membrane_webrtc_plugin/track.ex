@@ -251,6 +251,7 @@ defmodule Membrane.WebRTC.Track do
     case encoding_name do
       "opus" -> :OPUS
       "VP8" -> :VP8
+      "VP9" -> :VP9
       "H264" -> :H264
       encoding -> raise "Not supported encoding: #{encoding}"
     end
