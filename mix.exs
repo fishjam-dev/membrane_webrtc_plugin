@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.7.0"
+  @version "0.8.0-rc.1"
   @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
 
   def project do
@@ -47,8 +47,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, "~> 0.7.0"},
-      {:membrane_rtp_plugin,
-       github: "membraneframework/membrane_rtp_plugin", branch: "feat/fir-pli-handling"},
+      {:membrane_rtp_plugin, "~> 0.15.0-rc.1"},
       {:membrane_rtp_format, "~> 0.5.0"},
       {:membrane_ice_plugin, "~> 0.13.0"},
       {:membrane_funnel_plugin, "~> 0.6.0"},
