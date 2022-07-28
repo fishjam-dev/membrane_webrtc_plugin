@@ -609,6 +609,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
+  def handle_notification({:bandwidth_estimation, _estimation} = msg, _from, _ctx, state) do
+    {{:ok, notify: msg}, state}
+  end
+
+  @impl true
   def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
 
   @impl true
