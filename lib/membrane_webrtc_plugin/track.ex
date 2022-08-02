@@ -7,7 +7,7 @@ defmodule Membrane.WebRTC.Track do
   alias Membrane.RTP
   alias ExSDP.Attribute.{Extmap, FMTP, RTPMapping}
   alias ExSDP.Media
-  alias Membrane.WebRTC.{Extension, Utils}
+  alias Membrane.WebRTC.Extension
 
   @supported_rids ["l", "m", "h"]
 
@@ -18,15 +18,21 @@ defmodule Membrane.WebRTC.Track do
     :name,
     :mid,
     :rids,
-    :rtp_mapping,
-    :fmtp,
     :status,
     :extmaps
   ]
-  defstruct @enforce_keys ++ [ssrc: nil, encoding: nil, rid_to_ssrc: %{}]
+  defstruct @enforce_keys ++
+              [
+                ssrc: nil,
+                rtx_ssrc: nil,
+                selected_encoding_key: nil,
+                selected_encoding: nil,
+                offered_encodings: [],
+                rid_to_ssrc: %{}
+              ]
 
   @type id :: String.t()
-  @type encoding :: :OPUS | :H264 | :VP8
+  @type encoding_key :: :OPUS | :H264 | :VP8
 
   @type t :: %__MODULE__{
           type: :audio | :video,
@@ -34,13 +40,13 @@ defmodule Membrane.WebRTC.Track do
           id: id,
           name: String.t(),
           ssrc: RTP.ssrc_t() | [RTP.ssrc_t()],
-          encoding: encoding,
+          rtx_ssrc: RTP.ssrc_t() | nil,
+          selected_encoding_key: encoding_key,
+          offered_encodings: [__MODULE__.Encoding.t()],
           status: :pending | :ready | :linked | :disabled,
           mid: binary(),
           rids: [String.t()] | nil,
           rid_to_ssrc: %{},
-          rtp_mapping: RTPMapping.t() | [RTPMapping.t()],
-          fmtp: FMTP.t() | [FMTP.t()],
           extmaps: [Extmap]
         }
 
@@ -54,12 +60,12 @@ defmodule Membrane.WebRTC.Track do
           id: String.t(),
           name: String.t(),
           ssrc: RTP.ssrc_t() | [RTP.ssrc_t()] | nil,
-          encoding: encoding,
+          rtx_ssrc: RTP.ssrc_t() | nil,
+          selected_encoding_key: encoding_key(),
+          offered_encodings: [__MODULE__.Encoding.t()],
           mid: non_neg_integer(),
           rids: [String.t()] | nil,
-          rtp_mapping: RTPMapping.t(),
           status: :pending | :ready | :linked | :disabled,
-          fmtp: FMTP.t(),
           extmaps: [Extmap]
         ) :: t
   def new(type, stream_id, opts \\ []) do
@@ -72,12 +78,12 @@ defmodule Membrane.WebRTC.Track do
       id: id,
       name: name,
       ssrc: Keyword.get(opts, :ssrc, :crypto.strong_rand_bytes(4)),
-      encoding: Keyword.get(opts, :encoding),
-      rtp_mapping: Keyword.get(opts, :rtp_mapping),
+      selected_encoding: Keyword.get(opts, :selected_encoding),
+      selected_encoding_key: Keyword.get(opts, :selected_encoding_key),
+      offered_encodings: Keyword.get(opts, :offered_encodings, []),
       mid: Keyword.get(opts, :mid),
       rids: Keyword.get(opts, :rids),
       status: Keyword.get(opts, :status, :ready),
-      fmtp: Keyword.get(opts, :fmtp),
       extmaps: Keyword.get(opts, :extmaps, [])
     }
   end
@@ -148,13 +154,73 @@ defmodule Membrane.WebRTC.Track do
         :ready
       end
 
+    grouped_rtpmaps =
+      sdp_media
+      |> Media.get_attributes(:rtpmap)
+      |> Enum.group_by(fn
+        %{encoding: "rtx"} -> :rtx
+        %{encoding: "red"} -> :red
+        _ -> :codec
+      end)
+
+    fmtps_by_pt =
+      sdp_media
+      |> Media.get_attributes(:fmtp)
+      |> Map.new(&{&1.pt, &1})
+
+    rtx_streams =
+      grouped_rtpmaps
+      |> Map.get(:rtx, [])
+      |> Map.new(fn %{payload_type: pt} ->
+        fmtp = fmtps_by_pt |> Map.fetch!(pt)
+        {fmtp.apt, fmtp}
+      end)
+
+    red_streams =
+      grouped_rtpmaps
+      |> Map.get(:red, [])
+      |> Enum.flat_map(fn %{payload_type: pt} ->
+        case fmtps_by_pt |> Map.fetch(pt) do
+          {:ok, %FMTP{redundant_payloads: apts}} -> apts |> Enum.map(&{&1, pt})
+          # Chrome seems to offer an invalid "red" stream for video without FMTP ¯\_(ツ)_/¯
+          :error -> []
+        end
+      end)
+      |> Map.new()
+
+    rtcp_feedbacks = sdp_media |> Media.get_attributes(:rtcp_feedback) |> Map.new(&{&1.pt, &1})
+
+    encodings =
+      grouped_rtpmaps.codec
+      |> Enum.map(fn %{payload_type: pt} = rtpmap ->
+        feedbacks = Map.get(rtcp_feedbacks, :all, []) ++ Map.get(rtcp_feedbacks, pt, [])
+
+        rtx_metadata =
+          rtx_streams
+          |> Map.get(pt)
+          |> case do
+            nil -> nil
+            %FMTP{pt: pt, rtx_time: rtx_time} -> %{payload_type: pt, rtx_time: rtx_time}
+          end
+
+        %__MODULE__.Encoding{
+          payload_type: pt,
+          name: rtpmap.encoding,
+          clock_rate: rtpmap.clock_rate,
+          rtx: rtx_metadata,
+          red_payload_type: red_streams |> Map.get(pt),
+          audio_channels: rtpmap.params,
+          rtcp_feedback: MapSet.new(feedbacks),
+          format_params: fmtps_by_pt |> Map.get(pt)
+        }
+      end)
+
     opts = [
       id: id,
       ssrc: ssrc,
       mid: Media.get_attribute(sdp_media, :mid) |> elem(1),
       rids: rids,
-      rtp_mapping: Media.get_attributes(sdp_media, :rtpmap),
-      fmtp: Media.get_attributes(sdp_media, :fmtp),
+      offered_encodings: encodings,
       status: status,
       extmaps: Media.get_attributes(sdp_media, :extmap)
     ]
@@ -176,17 +242,14 @@ defmodule Membrane.WebRTC.Track do
       endpoint_direction: endpoint_direction
     } = constraints
 
-    selected_rtp_fmtp_pair =
-      track
-      |> Utils.pair_rtp_mappings_with_fmtp()
+    selected_encoding =
+      track.offered_encodings
       |> Enum.filter(codecs_filter)
       |> List.first()
 
-    if selected_rtp_fmtp_pair == nil do
-      raise("All payload types in SDP offer are unsupported")
+    if selected_encoding == nil do
+      raise "No supported payload types in SDP offer!"
     end
-
-    {rtp_mapping, fmtp} = selected_rtp_fmtp_pair
 
     status =
       cond do
@@ -215,27 +278,29 @@ defmodule Membrane.WebRTC.Track do
           track.status
       end
 
-    encoding = encoding_to_atom(rtp_mapping.encoding)
+    encoding_key = encoding_to_atom(selected_encoding.name)
 
-    extmaps = Enum.filter(track.extmaps, &Extension.supported?(enabled_extensions, &1, encoding))
+    extmaps =
+      Enum.filter(track.extmaps, &Extension.supported?(enabled_extensions, &1, encoding_key))
 
     %__MODULE__{
       track
-      | encoding: encoding,
+      | selected_encoding_key: encoding_key,
+        selected_encoding: selected_encoding,
+        offered_encodings: [],
         extmaps: extmaps,
-        fmtp: fmtp,
-        rtp_mapping: rtp_mapping,
         status: status
     }
   end
 
   @spec to_otel_data(t()) :: String.t()
   def to_otel_data(%__MODULE__{rids: nil} = track),
-    do: "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}}"
+    do: "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.selected_encoding_key}}"
 
   def to_otel_data(%__MODULE__{} = track) do
     rids = Enum.join(track.rids, ", ")
-    "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.encoding}, rids: [#{rids}]}"
+
+    "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.selected_encoding_key}, rids: [#{rids}]}"
   end
 
   defp encoding_to_atom(encoding_name) do

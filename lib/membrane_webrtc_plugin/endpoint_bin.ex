@@ -89,7 +89,7 @@ defmodule Membrane.WebRTC.EndpointBin do
                   "Sender reports's generation interval, set to nil to avoid reports generation"
               ],
               filter_codecs: [
-                spec: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
+                spec: (Membrane.WebRTC.Track.Encoding.t() -> boolean()),
                 default: &SDP.filter_mappings(&1),
                 description: "Defines function which will filter SDP m-line by codecs"
               ],
@@ -336,20 +336,24 @@ defmodule Membrane.WebRTC.EndpointBin do
     # TODO: check this one
     %{use_payloader?: use_payloader?} = ctx.options
 
-    %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: mapping, extmaps: extmaps} =
-      Map.fetch!(state.outbound_tracks, track_id)
+    %Track{
+      ssrc: ssrc,
+      selected_encoding_key: encoding_key,
+      selected_encoding: encoding,
+      extmaps: extmaps
+    } = Map.fetch!(state.outbound_tracks, track_id)
 
     rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
 
     options = [
-      encoding: encoding,
-      clock_rate: mapping.clock_rate,
-      payload_type: mapping.payload_type,
+      encoding: encoding_key,
+      clock_rate: encoding.clock_rate,
+      payload_type: encoding.payload_type,
       rtp_extension_mapping: rtp_extension_mapping
     ]
 
     encoding_specific_links =
-      case encoding do
+      case encoding_key do
         :H264 when use_payloader? ->
           &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
 
@@ -359,7 +363,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     payloader =
       if use_payloader? do
-        {:ok, payloader} = Membrane.RTP.PayloadFormatResolver.payloader(encoding)
+        {:ok, payloader} = Membrane.RTP.PayloadFormatResolver.payloader(encoding_key)
 
         payloader
       else
@@ -387,8 +391,12 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_pad_added(Pad.ref(:output, {track_id, rid}) = pad, ctx, state) do
-    %Track{ssrc: ssrc, encoding: encoding, rtp_mapping: rtp_mapping, extmaps: extmaps} =
-      track = Map.fetch!(state.inbound_tracks, track_id)
+    %Track{
+      ssrc: ssrc,
+      selected_encoding_key: encoding_key,
+      selected_encoding: encoding,
+      extmaps: extmaps
+    } = track = Map.fetch!(state.inbound_tracks, track_id)
 
     # if `rid` is set, it is a request for specific encoding of simulcast track
     # choose ssrc which corresponds to given `rid`
@@ -400,7 +408,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     depayloader =
       if use_depayloader? do
-        {:ok, depayloader} = Membrane.RTP.PayloadFormatResolver.depayloader(encoding)
+        {:ok, depayloader} = Membrane.RTP.PayloadFormatResolver.depayloader(encoding_key)
 
         depayloader
       else
@@ -412,10 +420,10 @@ defmodule Membrane.WebRTC.EndpointBin do
     output_pad_options = [
       extensions: ctx.options.extensions,
       rtp_extensions: to_rtp_extensions(extmaps, :inbound, state),
-      clock_rate: rtp_mapping.clock_rate,
+      clock_rate: encoding.clock_rate,
       depayloader: depayloader,
       telemetry_label: telemetry_label,
-      encoding: encoding
+      encoding: encoding_key
     ]
 
     spec = %ParentSpec{
@@ -516,7 +524,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     state = put_in(state, [:ssrc_to_track_id, ssrc], track.id)
     depayloading_filter = depayloading_filter_for(track)
 
-    notification = {:new_track, track.id, rid, track.encoding, depayloading_filter}
+    notification = {:new_track, track.id, rid, track.selected_encoding_key, depayloading_filter}
 
     {{:ok, [{:notify, notification}]}, state}
   end
@@ -925,11 +933,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   defp depayloading_filter_for(track) do
-    case Membrane.RTP.PayloadFormatResolver.depayloader(track.encoding) do
+    case Membrane.RTP.PayloadFormatResolver.depayloader(track.selected_encoding_key) do
       {:ok, depayloader} ->
         %Membrane.RTP.DepayloaderBin{
           depayloader: depayloader,
-          clock_rate: track.rtp_mapping.clock_rate
+          clock_rate: track.selected_encoding.clock_rate
         }
 
       :error ->
