@@ -364,13 +364,18 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
+    # This is a workaround.
+    # Spawn TWCC Sender only when TWCC Receiver is present in rtp_extensions
+    rtp_extensions = to_rtp_extensions(extmaps, state)
+    twcc? = Keyword.has_key?(rtp_extensions, :twcc)
+
     links = [
       link(:rtp)
       |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
       |> to(:ice_funnel),
       link_bin_input(pad)
       |> then(encoding_specific_links)
-      |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader])
+      |> via_in(Pad.ref(:input, ssrc), options: [payloader: payloader, twcc?: twcc?])
       |> to(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
       |> to(:ice_funnel)
@@ -401,16 +406,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         nil
       end
 
-    rtp_extensions =
-      extmaps
-      |> Enum.map(&Extension.as_rtp_extension(state.extensions, &1))
-      |> Enum.reject(fn {_name, rtp_module} -> rtp_module == :no_rtp_module end)
-
     telemetry_label = state.telemetry_label ++ [track_id: "#{track_id}:#{rid}"]
 
     output_pad_options = [
       extensions: ctx.options.extensions,
-      rtp_extensions: rtp_extensions,
+      rtp_extensions: to_rtp_extensions(extmaps, state),
       clock_rate: rtp_mapping.clock_rate,
       depayloader: depayloader,
       telemetry_label: telemetry_label,
@@ -929,5 +929,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       :error ->
         nil
     end
+  end
+
+  defp to_rtp_extensions(extmaps, state) do
+    extmaps
+    |> Enum.map(&Extension.as_rtp_extension(state.extensions, &1))
+    |> Enum.reject(fn {_name, rtp_module} -> rtp_module == :no_rtp_module end)
   end
 end
