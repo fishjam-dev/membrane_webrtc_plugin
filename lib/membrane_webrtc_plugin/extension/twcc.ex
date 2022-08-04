@@ -12,7 +12,8 @@ defmodule Membrane.WebRTC.Extension.TWCC do
 
   @name :twcc
   @uri "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
-  @rtp_module Membrane.RTP.TWCCReceiver
+  @twcc_recv_rtp_module Membrane.RTP.TWCCReceiver
+  @twcc_send_rtp_module Membrane.RTP.TWCCSender
 
   @impl true
   def new(opts \\ Keyword.new()),
@@ -22,7 +23,8 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   def compatible?(_encoding), do: true
 
   @impl true
-  def get_rtp_module(twcc_id, _rtp_opts), do: %@rtp_module{twcc_id: twcc_id}
+  def get_rtp_module(twcc_id, _rtp_opts, :inbound), do: %@twcc_recv_rtp_module{twcc_id: twcc_id}
+  def get_rtp_module(_twcc_id, _rtp_opts, :outbound), do: @twcc_send_rtp_module
 
   @impl true
   def add_to_media(media, id, _direction, payload_types) do

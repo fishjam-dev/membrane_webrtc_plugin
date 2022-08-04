@@ -23,7 +23,7 @@ defmodule Membrane.WebRTC.Extension.VAD do
   def compatible?(encoding), do: encoding == :OPUS
 
   @impl true
-  def get_rtp_module(vad_id, rtp_opts) do
+  def get_rtp_module(vad_id, rtp_opts, _track_type) do
     struct!(@rtp_module, [{:vad_id, vad_id} | rtp_opts])
   end
 

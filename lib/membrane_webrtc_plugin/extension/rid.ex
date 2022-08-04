@@ -24,7 +24,7 @@ defmodule Membrane.WebRTC.Extension.Rid do
   # for the whole session mid for same buffer will be the same.
   # It is used only in handler for `:new_rtp_stream` notification.
   @impl true
-  def get_rtp_module(_rid_id, _opts), do: :no_rtp_module
+  def get_rtp_module(_rid_id, _opts, _track_type), do: :no_rtp_module
 
   @impl true
   def add_to_media(media, id, _direction, _payload_types),
