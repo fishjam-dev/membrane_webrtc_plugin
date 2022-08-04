@@ -37,8 +37,10 @@ defmodule Membrane.WebRTC.Extension do
   @doc """
   Returns a module that implements the extension in `Membrane.RTP.SessionBin` or `:no_rtp_module` if such
   such module would only forward buffers to next element.
+
+  `:inbound`/`:outbound` denotes track type this extension was specified for.
   """
-  @callback get_rtp_module(Extmap.extension_id(), Keyword.t()) ::
+  @callback get_rtp_module(Extmap.extension_id(), Keyword.t(), :inbound | :outbound) ::
               Membrane.ParentSpec.child_spec_t() | :no_rtp_module
 
   @doc """
@@ -86,11 +88,14 @@ defmodule Membrane.WebRTC.Extension do
 
   @doc """
   Given a list of supported extensions, maps a supported `Extmap` to an `RTP.SessionBin.rtp_extension_t()`.
+
+  `:inbound`/`:outbound` denotes track type `extmap` was specified for.
   """
-  @spec as_rtp_extension([t()], Extmap.t()) :: RTP.SessionBin.rtp_extension_options_t()
-  def as_rtp_extension(extensions, extmap) do
+  @spec as_rtp_extension([t()], Extmap.t(), :inbound | :outbound) ::
+          RTP.SessionBin.rtp_extension_options_t()
+  def as_rtp_extension(extensions, extmap, track_type) do
     extension = from_extmap(extensions, extmap)
-    {extension.name, extension.module.get_rtp_module(extmap.id, extension.rtp_opts)}
+    {extension.name, extension.module.get_rtp_module(extmap.id, extension.rtp_opts, track_type)}
   end
 
   @doc """
