@@ -189,11 +189,6 @@ defmodule Membrane.WebRTC.Track do
 
     status =
       cond do
-        # if simulcast was offered but we don't accept it, turn track off
-        # this is not compliant with WebRTC standard as we should only
-        # remove simulcast attributes and be prepared to receive one
-        # encoding but in such a case browser changes SSRC after ICE restart
-        # and we cannot handle this at the moment
         track.rids != nil and simulcast? == false ->
           raise RuntimeError, message: "Simulcast was offered, but it's not supported"
 
