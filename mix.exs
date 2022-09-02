@@ -63,7 +63,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
       # Otel
       {:opentelemetry_api, "~> 1.0"},
-      {:opentelemetry, "~> 1.0"}
+      {:opentelemetry, "~> 1.0.4"}
     ]
   end
 
