@@ -3,8 +3,8 @@ defmodule Membrane.WebRTC.Extension do
   A module that provides mappings between `ExSDP.Attribute.Extmap` and modules implementing
   `Membrane.WebRTC.Extension` behaviour.
   """
+  alias ExSDP.Attribute.{Extmap, FMTP}
   alias ExSDP.Media
-  alias ExSDP.Attribute.{FMTP, Extmap}
   alias Membrane.{RTP, WebRTC}
 
   @enforce_keys [:module, :uri, :name]

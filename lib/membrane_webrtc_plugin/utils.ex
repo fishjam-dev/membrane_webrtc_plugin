@@ -2,7 +2,7 @@ defmodule Membrane.WebRTC.Utils do
   @moduledoc false
 
   alias Membrane.WebRTC.Track
-  alias ExSDP.{FMTP, RTPMapping}
+  alias ExSDP.Attribute.{FMTP, RTPMapping}
 
   @doc """
   Pairs RTP mappings (rtpmap) with corresponding format paramters (fmtp).

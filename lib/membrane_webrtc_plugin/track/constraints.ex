@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Track.Constraints do
   @moduledoc false
 
-  alias ExSDP.{FMTP, RTPMapping}
+  alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.WebRTC.{EndpointBin, Extension}
 
   @type t :: %__MODULE__{
