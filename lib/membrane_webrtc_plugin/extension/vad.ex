@@ -6,8 +6,8 @@ defmodule Membrane.WebRTC.Extension.VAD do
   """
   @behaviour Membrane.WebRTC.Extension
 
-  alias ExSDP.Media
   alias ExSDP.Attribute.Extmap
+  alias ExSDP.Media
   alias Membrane.WebRTC.Extension
 
   @name :vad

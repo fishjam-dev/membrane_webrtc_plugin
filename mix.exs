@@ -12,6 +12,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: dialyzer(),
 
       # hex
       description: "Plugin for sending and receiving media with WebRTC",
@@ -62,8 +63,21 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
       # Otel
       {:opentelemetry_api, "~> 1.0"},
-      {:opentelemetry, "~> 1.0"}
+      {:opentelemetry, "~> 1.0.4"}
     ]
+  end
+
+  defp dialyzer() do
+    opts = [
+      flags: [:error_handling]
+    ]
+
+    if System.get_env("CI") == "true" do
+      # Store PLTs in cacheable directory for CI
+      [plt_local_path: "priv/plts", plt_core_path: "priv/plts"] ++ opts
+    else
+      opts
+    end
   end
 
   defp package do

@@ -2,11 +2,12 @@ defmodule Membrane.WebRTC.Track do
   @moduledoc """
   Module representing a WebRTC track.
   """
+  require Membrane.Logger
+
+  alias Membrane.RTP
   alias ExSDP.Attribute.{Extmap, FMTP, RTPMapping}
   alias ExSDP.Media
   alias Membrane.WebRTC.{Extension, Utils}
-
-  require Membrane.Logger
 
   @supported_rids ["l", "m", "h"]
 

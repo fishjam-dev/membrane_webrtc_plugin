@@ -5,8 +5,8 @@ defmodule Membrane.WebRTC.Extension.Mid do
   This extension is described at https://tools.ietf.org/pdf/draft-ietf-mmusic-rfc8843bis-09.pdf.
   """
   @behaviour Membrane.WebRTC.Extension
-  alias ExSDP.Media
   alias ExSDP.Attribute.Extmap
+  alias ExSDP.Media
   alias Membrane.WebRTC.Extension
 
   @name :mid

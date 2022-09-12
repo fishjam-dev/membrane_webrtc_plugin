@@ -14,12 +14,14 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Membrane.Bin
   use Bunch
 
+  require Membrane.Logger
+  require Membrane.OpenTelemetry
+
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.ICE
+  alias Membrane.RTP
   alias Membrane.WebRTC.{Extension, SDP, Track}
-  require Membrane.Logger
-  require Membrane.OpenTelemetry
 
   # we always want to use ICE lite at the moment
   @ice_lite true

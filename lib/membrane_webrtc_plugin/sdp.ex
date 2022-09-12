@@ -1,11 +1,10 @@
 defmodule Membrane.WebRTC.SDP do
   @moduledoc false
+  require Membrane.Logger
 
-  alias ExSDP.Attribute.{RTPMapping, MSID, SSRC, FMTP, Group}
+  alias ExSDP.Attribute.{FMTP, Group, MSID, RTPMapping, SSRC}
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.WebRTC.{Extension, Track, Utils}
-
-  require Membrane.Logger
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
@@ -132,7 +131,7 @@ defmodule Membrane.WebRTC.SDP do
 
     track.rids
     |> Enum.reduce(media, fn rid, media ->
-      Media.add_attribute(media, "rid:#{rid} recv")
+      Media.add_attribute(media, "rid:#{inspect(rid)} recv")
     end)
     |> Media.add_attribute("simulcast:recv #{rids}")
   end
