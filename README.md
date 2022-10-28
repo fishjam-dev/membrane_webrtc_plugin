@@ -15,7 +15,7 @@ The package can be installed by adding `membrane_webrtc_plugin` to your list of 
 ```elixir
 def deps do
   [
-    {:membrane_webrtc_plugin, "~> 0.8.1"}
+    {:membrane_webrtc_plugin, "~> 0.8.2"}
   ]
 end
 ```

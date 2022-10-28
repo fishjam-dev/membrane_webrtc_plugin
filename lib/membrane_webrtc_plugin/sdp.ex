@@ -131,7 +131,7 @@ defmodule Membrane.WebRTC.SDP do
 
     track.rids
     |> Enum.reduce(media, fn rid, media ->
-      Media.add_attribute(media, "rid:#{inspect(rid)} recv")
+      Media.add_attribute(media, "rid:#{rid} recv")
     end)
     |> Media.add_attribute("simulcast:recv #{rids}")
   end
