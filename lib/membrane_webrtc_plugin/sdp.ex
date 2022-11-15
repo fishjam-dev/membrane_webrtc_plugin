@@ -285,10 +285,14 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   defp update_outbound_track(track, sdp_track) do
+    if is_nil(track.selected_encoding_key) do
+      raise "Unknown encoding of outbound track, cannot pick params from SDP"
+    end
+
     encoding_name_to_find = Utils.encoding_name_to_string(track.selected_encoding_key)
 
     selected_encoding =
-      Enum.find(sdp_track.offered_encodings, fn %{name: name} ->
+      Enum.find(sdp_track.offered_encodings, fn %Track.Encoding{name: name} ->
         name == encoding_name_to_find
       end)
 

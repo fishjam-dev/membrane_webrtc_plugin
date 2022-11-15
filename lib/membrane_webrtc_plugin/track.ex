@@ -188,7 +188,10 @@ defmodule Membrane.WebRTC.Track do
       end)
       |> Map.new()
 
-    rtcp_feedbacks = sdp_media |> Media.get_attributes(:rtcp_feedback) |> Map.new(&{&1.pt, &1})
+    rtcp_feedbacks =
+      sdp_media
+      |> Media.get_attributes(:rtcp_feedback)
+      |> Enum.group_by(& &1.pt)
 
     encodings =
       grouped_rtpmaps.codec
