@@ -556,9 +556,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:vad, val} = msg, _from, _ctx, state) do
-    Membrane.OpenTelemetry.add_event(@life_span_id, :vad, value: val)
-    {{:ok, notify: msg}, state}
+  def handle_notification({:vad, {ssrc, val}}, _from, _ctx, state) do
+    track_id = Map.fetch!(state.ssrc_to_track_id, ssrc)
+
+    Membrane.OpenTelemetry.add_event(@life_span_id, :vad, value: {ssrc, val})
+    {{:ok, notify: {:vad, {track_id, val}}}, state}
   end
 
   @impl true
