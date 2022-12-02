@@ -48,7 +48,11 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.3.0"},
       {:ex_sdp, "~> 0.8.0"},
-      {:membrane_rtp_plugin, "~> 0.17.0"},
+      # Todo: after merging changes to rtp and before merging to master, go back to Hex version
+      # Was ~> 0.17.0 previously
+      {:membrane_rtp_plugin,
+       github: "membraneframework/membrane_rtp_plugin",
+       branch: "RTC-39-add-track-identifier-to-vad-notifications"},
       {:membrane_rtp_format, "~> 0.5.0"},
       {:membrane_ice_plugin, "~> 0.13.0"},
       {:membrane_funnel_plugin, "~> 0.6.0"},
