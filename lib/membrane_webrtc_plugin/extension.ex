@@ -55,6 +55,11 @@ defmodule Membrane.WebRTC.Extension do
               Media.t()
 
   @doc """
+  Returns an URI that identifies extension in SDP
+  """
+  @callback uri() :: String.t()
+
+  @doc """
   Given a list of supported extensions, checks if there is an extension that corresponds to
   given `Extmap` and encoding.
   """

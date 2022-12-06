@@ -35,4 +35,7 @@ defmodule Membrane.WebRTC.Extension.VAD do
         uri: @uri,
         attributes: @attributes
       })
+
+  @impl true
+  def uri, do: @uri
 end

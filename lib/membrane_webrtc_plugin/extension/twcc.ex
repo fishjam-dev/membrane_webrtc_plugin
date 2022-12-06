@@ -6,7 +6,7 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   """
   @behaviour Membrane.WebRTC.Extension
 
-  alias ExSDP.Attribute.Extmap
+  alias ExSDP.Attribute.{Extmap, RTCPFeedback}
   alias ExSDP.Media
   alias Membrane.WebRTC.Extension
 
@@ -30,6 +30,9 @@ defmodule Membrane.WebRTC.Extension.TWCC do
   def add_to_media(media, id, _direction, payload_types) do
     media
     |> Media.add_attribute(%Extmap{id: id, uri: @uri})
-    |> Media.add_attributes(Enum.map(payload_types, &"rtcp-fb:#{&1} transport-cc"))
+    |> Media.add_attributes(Enum.map(payload_types, &%RTCPFeedback{pt: &1, feedback_type: :twcc}))
   end
+
+  @impl true
+  def uri, do: @uri
 end

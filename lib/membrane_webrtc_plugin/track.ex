@@ -5,7 +5,7 @@ defmodule Membrane.WebRTC.Track do
   require Membrane.Logger
 
   alias Membrane.RTP
-  alias ExSDP.Attribute.{Extmap, FMTP, RTPMapping}
+  alias ExSDP.Attribute.{Extmap, FMTP}
   alias ExSDP.Media
   alias Membrane.WebRTC.Extension
 
@@ -32,6 +32,7 @@ defmodule Membrane.WebRTC.Track do
               ]
 
   @type id :: String.t()
+  @type rid :: String.t()
   @type encoding_key :: :OPUS | :H264 | :VP8
 
   @type t :: %__MODULE__{
@@ -40,12 +41,12 @@ defmodule Membrane.WebRTC.Track do
           id: id,
           name: String.t(),
           ssrc: RTP.ssrc_t() | [RTP.ssrc_t()],
-          rtx_ssrc: RTP.ssrc_t() | nil,
+          rtx_ssrc: RTP.ssrc_t() | [RTP.ssrc_t()] | nil,
           selected_encoding_key: encoding_key,
           offered_encodings: [__MODULE__.Encoding.t()],
           status: :pending | :ready | :linked | :disabled,
           mid: binary(),
-          rids: [String.t()] | nil,
+          rids: [rid()] | nil,
           rid_to_ssrc: %{},
           extmaps: [Extmap]
         }
@@ -78,6 +79,7 @@ defmodule Membrane.WebRTC.Track do
       id: id,
       name: name,
       ssrc: Keyword.get(opts, :ssrc, :crypto.strong_rand_bytes(4)),
+      rtx_ssrc: Keyword.get(opts, :rtx_ssrc),
       selected_encoding: Keyword.get(opts, :selected_encoding),
       selected_encoding_key: Keyword.get(opts, :selected_encoding_key),
       offered_encodings: Keyword.get(opts, :offered_encodings, []),
@@ -142,10 +144,20 @@ defmodule Membrane.WebRTC.Track do
 
     rids = if(rids == [], do: nil, else: rids)
 
-    ssrc = Media.get_attribute(sdp_media, :ssrc)
-    # this function is being called only for inbound media
-    # therefore, if SSRC is `nil` `sdp_media` must represent simulcast track
-    ssrc = if ssrc == nil, do: [], else: ssrc.id
+    ssrc_group = Media.get_attribute(sdp_media, :ssrc_group)
+    ssrc_attribute = Media.get_attribute(sdp_media, :ssrc)
+
+    [ssrc, rtx_ssrc] =
+      cond do
+        # case 1 - we have stream with retransmission described by FID ssrc-group
+        ssrc_group != nil and ssrc_group.semantics == "FID" -> ssrc_group.ssrcs
+        # case 2 - no rtx, just ssrc with cname definition
+        ssrc_attribute != nil -> [ssrc_attribute.id, nil]
+        # case 3 - simulcast
+        # this function is being called only for inbound media
+        # therefore, if SSRC is `nil` `sdp_media` must represent simulcast track
+        true -> [[], []]
+      end
 
     status =
       if Media.get_attribute(sdp_media, :inactive) != nil do
@@ -160,7 +172,7 @@ defmodule Membrane.WebRTC.Track do
       |> Enum.group_by(fn
         %{encoding: "rtx"} -> :rtx
         %{encoding: "red"} -> :red
-        _ -> :codec
+        _other -> :codec
       end)
 
     fmtps_by_pt =
@@ -221,6 +233,7 @@ defmodule Membrane.WebRTC.Track do
     opts = [
       id: id,
       ssrc: ssrc,
+      rtx_ssrc: rtx_ssrc,
       mid: Media.get_attribute(sdp_media, :mid) |> elem(1),
       rids: rids,
       offered_encodings: encodings,
