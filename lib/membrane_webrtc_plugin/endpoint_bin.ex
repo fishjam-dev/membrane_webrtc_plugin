@@ -556,12 +556,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_notification({:vad, val} = msg, _from, _ctx, state) do
-    Membrane.OpenTelemetry.add_event(@life_span_id, :vad, value: val)
-    {{:ok, notify: msg}, state}
-  end
-
-  @impl true
   def handle_notification({:connection_failed, _stream_id, _component_id}, _from, _ctx, state) do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :connection_failed)
     Membrane.OpenTelemetry.end_span(@ice_restart_span_id)
