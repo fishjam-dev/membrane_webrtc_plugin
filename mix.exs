@@ -44,26 +44,30 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
   defp deps do
     [
       {:membrane_opentelemetry, "~> 0.1.0"},
-      {:membrane_core, "~> 0.10.0"},
+      {:membrane_core, "~> 0.11.2"},
       {:qex, "~> 0.5.0"},
-      {:bunch, "~> 1.3.0"},
+      {:bunch, "~> 1.3"},
       {:ex_sdp, "~> 0.8.0"},
-      {:membrane_rtp_plugin, "~> 0.18.0"},
-      {:membrane_rtp_format, "~> 0.5.0"},
-      {:membrane_ice_plugin, "~> 0.13.0"},
-      {:membrane_funnel_plugin, "~> 0.6.0"},
-      {:membrane_h264_ffmpeg_plugin, "~> 0.21.0"},
-      {:membrane_rtp_vp8_plugin, "~> 0.6.0"},
-      {:membrane_rtp_h264_plugin, "~> 0.13.0"},
-      {:membrane_rtp_opus_plugin, "~> 0.6.0"},
-      {:ex_libsrtp, "~> 0.6.0"},
+      # FIXME change after RTP bugfix release
+      # {:membrane_rtp_plugin, "~> 0.19.0"},
+      {:membrane_rtp_plugin, github: "membraneframework/membrane_rtp_plugin", override: true},
+      {:membrane_rtp_format, "~> 0.6.0"},
+      {:membrane_ice_plugin, "~> 0.14.0"},
+      {:membrane_funnel_plugin, "~> 0.7.0"},
+      {:membrane_h264_ffmpeg_plugin, "~> 0.25.0"},
+      # FIXME change after VP8 release
+      {:membrane_rtp_vp8_plugin, "~> 0.7.0"},
+      {:membrane_rtp_h264_plugin, "~> 0.14.0"},
+      # FIXME: put back
+      # {:membrane_rtp_opus_plugin, "~> 0.6.0"},
+      {:ex_libsrtp, ">= 0.0.0"},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
-      {:credo, "~> 1.6", only: :dev, runtime: false},
+      {:credo, "~> 1.6", only: :dev, runtime: false}
 
       # Otel
-      {:opentelemetry_api, "~> 1.0"},
-      {:opentelemetry, "~> 1.0.4"}
+      # {:opentelemetry_api, "~> 1.0"},
+      # {:opentelemetry, "~> 1.0.4"}
     ]
   end
 

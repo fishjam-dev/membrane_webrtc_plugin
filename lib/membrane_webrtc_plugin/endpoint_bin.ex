@@ -141,7 +141,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   def_input_pad :input,
     demand_unit: :buffers,
-    caps: :any,
+    accepted_format: _any,
     availability: :on_request,
     options: [
       use_payloader?: [
@@ -156,7 +156,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   def_output_pad :output,
     demand_unit: :buffers,
-    caps: :any,
+    accepted_format: _any,
     availability: :on_request,
     options: [
       extensions: [
@@ -246,7 +246,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_init(%__MODULE__{} = opts) do
+  def handle_init(_ctx, %__MODULE__{} = opts) do
     trace_metadata =
       Keyword.merge(opts.trace_metadata, [
         {:"library.language", :erlang},
@@ -259,44 +259,37 @@ defmodule Membrane.WebRTC.EndpointBin do
     Membrane.OpenTelemetry.start_span(@life_span_id, start_span_opts)
     Membrane.OpenTelemetry.set_attributes(@life_span_id, trace_metadata)
 
-    children = %{
-      ice: %ICE.Endpoint{
+    rtp_input_ref = make_ref()
+
+    spec = [
+      child(:ice, %ICE.Endpoint{
         integrated_turn_options: opts.integrated_turn_options,
         handshake_opts: opts.handshake_opts,
         telemetry_label: opts.telemetry_label,
         trace_context: opts.trace_context,
         parent_span: Membrane.OpenTelemetry.get_span(@life_span_id)
-      },
-      rtp: %Membrane.RTP.SessionBin{
+      }),
+      child(:rtp, %Membrane.RTP.SessionBin{
         secure?: true,
         rtcp_receiver_report_interval: opts.rtcp_receiver_report_interval,
         rtcp_sender_report_interval: opts.rtcp_sender_report_interval
-      },
-      ice_funnel: Membrane.Funnel
-    }
-
-    rtp_input_ref = make_ref()
-
-    links = [
+      }),
+      child(:ice_funnel, Membrane.Funnel),
       # always link :rtcp_receiver_output to handle FIR RTCP packets
-      link(:rtp)
+      get_child(:rtp)
       |> via_out(Pad.ref(:rtcp_receiver_output, rtp_input_ref))
-      |> to(:ice_funnel),
-      link(:ice)
+      |> get_child(:ice_funnel),
+      get_child(:ice)
       |> via_out(Pad.ref(:output, 1))
       |> via_in(Pad.ref(:rtp_input, rtp_input_ref))
-      |> to(:rtp),
-      link(:ice_funnel)
+      |> get_child(:rtp),
+      get_child(:ice_funnel)
       |> via_out(:output)
       |> via_in(Pad.ref(:input, 1))
-      |> to(:ice)
+      |> get_child(:ice)
     ]
 
-    spec = %ParentSpec{
-      children: children,
-      links: links,
-      log_metadata: opts.log_metadata
-    }
+    spec = {spec, log_metadata: opts.log_metadata}
 
     state =
       %State{
@@ -328,7 +321,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> add_tracks(:inbound_tracks, opts.inbound_tracks)
       |> add_tracks(:outbound_tracks, opts.outbound_tracks)
 
-    {{:ok, spec: spec}, state}
+    {[spec: spec], state}
   end
 
   @impl true
@@ -351,7 +344,8 @@ defmodule Membrane.WebRTC.EndpointBin do
     encoding_specific_links =
       case encoding do
         :H264 when use_payloader? ->
-          &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
+          # &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
+          raise "Unsupported"
 
         _other ->
           & &1
@@ -368,21 +362,21 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     rtp_extensions = to_rtp_extensions(extmaps, :outbound, state)
 
-    links = [
-      link(:rtp)
+    spec = [
+      get_child(:rtp)
       |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
-      |> to(:ice_funnel),
-      link_bin_input(pad)
+      |> get_child(:ice_funnel),
+      bin_input(pad)
       |> then(encoding_specific_links)
       |> via_in(Pad.ref(:input, ssrc),
         options: [payloader: payloader, rtp_extensions: rtp_extensions]
       )
-      |> to(:rtp)
+      |> get_child(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
-      |> to(:ice_funnel)
+      |> get_child(:ice_funnel)
     ]
 
-    {{:ok, spec: %ParentSpec{links: links}}, state}
+    {[spec: spec], state}
   end
 
   @impl true
@@ -418,34 +412,31 @@ defmodule Membrane.WebRTC.EndpointBin do
       encoding: encoding
     ]
 
-    spec = %ParentSpec{
-      links: [
-        link(:rtp)
-        |> via_out(Pad.ref(:output, ssrc), options: output_pad_options)
-        |> to_bin_output(pad)
-      ]
-    }
+    spec =
+      get_child(:rtp)
+      |> via_out(Pad.ref(:output, ssrc), options: output_pad_options)
+      |> bin_output(pad)
 
     state = put_in(state, [:inbound_tracks, track_id], %{track | status: :linked})
 
-    {{:ok, spec: spec}, state}
+    {[spec: spec], state}
   end
 
   @impl true
-  def handle_notification(
+  def handle_child_notification(
         {:new_rtp_stream, ssrc, pt, _rtp_header_extensions},
         _from,
         _ctx,
         %State{endpoint_direction: :sendonly} = _state
       ) do
-    raise("""
+    raise """
     Received new RTP stream but EndpointBin is set to :sendonly.
     RTP stream params: SSRC: #{inspect(ssrc)}, PT: #{inspect(pt)}"
-    """)
+    """
   end
 
   @impl true
-  def handle_notification(
+  def handle_child_notification(
         {:new_rtp_stream, ssrc, _pt, rtp_header_extensions},
         _from,
         _ctx,
@@ -518,16 +509,21 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     notification = {:new_track, track.id, rid, track.encoding, depayloading_filter}
 
-    {{:ok, [{:notify, notification}]}, state}
+    {[notify_parent: notification], state}
   end
 
   @impl true
-  def handle_notification({:handshake_init_data, _component_id, fingerprint}, _from, _ctx, state) do
-    {:ok, %{state | dtls_fingerprint: {:sha256, hex_dump(fingerprint)}}}
+  def handle_child_notification(
+        {:handshake_init_data, _component_id, fingerprint},
+        _from,
+        _ctx,
+        state
+      ) do
+    {[], %{state | dtls_fingerprint: {:sha256, hex_dump(fingerprint)}}}
   end
 
   @impl true
-  def handle_notification({:local_credentials, credentials}, _from, _ctx, state) do
+  def handle_child_notification({:local_credentials, credentials}, _from, _ctx, state) do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
     {actions, state} =
@@ -539,34 +535,38 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     state = %{state | ice: %{state.ice | ufrag: ice_ufrag, pwd: ice_pwd}}
-    {{:ok, actions}, state}
+    {actions, state}
   end
 
   @impl true
-  def handle_notification({:new_candidate_full, cand}, _from, _ctx, state) do
+  def handle_child_notification({:new_candidate_full, cand}, _from, _ctx, state) do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :local_candidate, candidate: cand)
     state = Map.update!(state, :candidates, &[cand | &1])
-    {{:ok, notify_candidates([cand])}, state}
+    {notify_candidates([cand]), state}
   end
 
   @impl true
-  def handle_notification(:candidate_gathering_done, _from, _ctx, state) do
+  def handle_child_notification(:candidate_gathering_done, _from, _ctx, state) do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :candidate_gathering_done, [])
-    {:ok, %{state | candidate_gathering_state: :done}}
+    {[], %{state | candidate_gathering_state: :done}}
   end
 
   @impl true
-  def handle_notification({:connection_failed, _stream_id, _component_id}, _from, _ctx, state) do
+  def handle_child_notification(
+        {:connection_failed, _stream_id, _component_id},
+        _from,
+        _ctx,
+        state
+      ) do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :connection_failed)
     Membrane.OpenTelemetry.end_span(@ice_restart_span_id)
 
     state = %{state | ice: %{state.ice | restarting?: false}}
-    {action, state} = maybe_restart_ice(state, true)
-    {{:ok, action}, state}
+    maybe_restart_ice(state, true)
   end
 
   @impl true
-  def handle_notification({:connection_ready, stream_id, component_id}, _from, _ctx, state)
+  def handle_child_notification({:connection_ready, stream_id, component_id}, _from, _ctx, state)
       when state.ice.restarting? do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :connection_ready,
       stream_id: stream_id,
@@ -581,7 +581,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       outbound_tracks
       |> Enum.filter(&(&1.status === :ready))
 
-    negotiations = [notify: {:negotiation_done, new_outbound_tracks}]
+    negotiations = [notify_parent: {:negotiation_done, new_outbound_tracks}]
 
     state = %{state | outbound_tracks: change_tracks_status(state, :ready, :linked)}
 
@@ -591,29 +591,37 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     actions = negotiations ++ restart_action
 
-    {{:ok, actions}, state}
+    {actions, state}
   end
 
   @impl true
-  def handle_notification({:connection_ready, _stream_id, _component_id}, _from, _ctx, state),
-    do: {:ok, state}
+  def handle_child_notification(
+        {:connection_ready, _stream_id, _component_id},
+        _from,
+        _ctx,
+        state
+      ),
+      do: {[], state}
 
   @impl true
-  def handle_notification({:udp_integrated_turn, turn}, _from, _ctx, state) do
+  def handle_child_notification({:udp_integrated_turn, turn}, _from, _ctx, state) do
     state = %{state | integrated_turn_servers: [turn] ++ state.integrated_turn_servers}
-    {:ok, state}
+    {[], state}
   end
 
   @impl true
-  def handle_notification({:bandwidth_estimation, _estimation} = msg, _from, _ctx, state) do
-    {{:ok, notify: msg}, state}
+  def handle_child_notification({:bandwidth_estimation, _estimation} = msg, _from, _ctx, state) do
+    {[notify_parent: msg], state}
   end
 
   @impl true
-  def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
+  def handle_child_notification(notification, from, _ctx, state) do
+    Membrane.Logger.warn("Ignoring child #{inspect(from)} notification #{inspect(notification)}")
+    {[], state}
+  end
 
   @impl true
-  def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
+  def handle_parent_notification({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_offer, sdp: sdp)
 
     {:ok, sdp} = sdp |> ExSDP.parse()
@@ -665,7 +673,8 @@ defmodule Membrane.WebRTC.EndpointBin do
     {actions, state} =
       withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
             candidate_gathering_check: nil <- state.candidate_gathering_state do
-        {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
+        {[notify_child: {:ice, :gather_candidates}],
+         %{state | candidate_gathering_state: :in_progress}}
       else
         tracks_check: _ -> {[], state}
         candidate_gathering_check: _ -> {notify_candidates(state.candidates), state}
@@ -677,52 +686,50 @@ defmodule Membrane.WebRTC.EndpointBin do
     actions =
       if Enum.empty?(removed_inbound_tracks),
         do: actions,
-        else: actions ++ [notify: {:removed_tracks, removed_inbound_tracks}]
+        else: actions ++ [notify_parent: {:removed_tracks, removed_inbound_tracks}]
 
     actions =
       link_notify ++
-        [notify: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
+        [notify_parent: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
         actions
 
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_answer, sdp: to_string(answer))
 
-    {{:ok, actions}, state}
+    {actions, state}
   end
 
   @impl true
-  def handle_other({:signal, {:candidate, candidate}}, _ctx, state) do
+  def handle_parent_notification({:signal, {:candidate, candidate}}, _ctx, state) do
     candidate = "a=" <> candidate
 
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :remote_candidate, candidate: candidate)
 
-    {{:ok, forward: {:ice, {:set_remote_candidate, candidate, 1}}}, state}
+    # {[notify_child: {:ice, {:set_remote_candidate, candidate, 1}}], state}
+    {[], state}
   end
 
   @impl true
-  def handle_other({:signal, :renegotiate_tracks}, _ctx, state) do
-    {action, state} =
-      cond do
-        state.ice.first? and state.ice.pwd != nil ->
-          state = Map.update!(state, :ice, &%{&1 | first?: false})
-          get_offer_data(state)
+  def handle_parent_notification({:signal, :renegotiate_tracks}, _ctx, state) do
+    cond do
+      state.ice.first? and state.ice.pwd != nil ->
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        get_offer_data(state)
 
-        state.ice.first? ->
-          state = Map.update!(state, :ice, &%{&1 | first?: false})
-          {[], state}
+      state.ice.first? ->
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        {[], state}
 
-        state.ice.pwd == nil ->
-          {[], state}
+      state.ice.pwd == nil ->
+        {[], state}
 
-        true ->
-          maybe_restart_ice(state, true)
-      end
-
-    {{:ok, action}, state}
+      true ->
+        maybe_restart_ice(state, true)
+    end
   end
 
   @impl true
-  def handle_other({:add_tracks, tracks}, _ctx, state) do
+  def handle_parent_notification({:add_tracks, tracks}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
     tracks =
@@ -734,40 +741,34 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     state = add_tracks(state, :outbound_tracks, tracks)
 
-    {action, state} =
-      cond do
-        state.ice.first? and state.ice.pwd != nil ->
-          state = Map.update!(state, :ice, &%{&1 | first?: false})
-          outbound_tracks = change_tracks_status(state, :pending, :ready)
-          state = %{state | outbound_tracks: outbound_tracks}
-          get_offer_data(state)
+    cond do
+      state.ice.first? and state.ice.pwd != nil ->
+        state = Map.update!(state, :ice, &%{&1 | first?: false})
+        outbound_tracks = change_tracks_status(state, :pending, :ready)
+        state = %{state | outbound_tracks: outbound_tracks}
+        get_offer_data(state)
 
-        state.ice.first? and state.ice.pwd == nil ->
-          outbound_tracks = change_tracks_status(state, :pending, :ready)
-          state = %{state | outbound_tracks: outbound_tracks}
-          {[], update_in(state, [:ice, :first?], fn _old_value -> false end)}
+      state.ice.first? and state.ice.pwd == nil ->
+        outbound_tracks = change_tracks_status(state, :pending, :ready)
+        state = %{state | outbound_tracks: outbound_tracks}
+        {[], update_in(state, [:ice, :first?], fn _old_value -> false end)}
 
-        true ->
-          maybe_restart_ice(state, true)
-      end
-
-    {{:ok, action}, state}
+      true ->
+        maybe_restart_ice(state, true)
+    end
   end
 
   @impl true
-  def handle_other({:remove_tracks, tracks_to_remove}, _ctx, state) do
+  def handle_parent_notification({:remove_tracks, tracks_to_remove}, _ctx, state) do
     outbound_tracks = state.outbound_tracks
 
     new_outbound_tracks =
       Enum.map(tracks_to_remove, &Map.get(outbound_tracks, &1.id))
       |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
 
-    {actions, state} =
-      state
-      |> Map.update!(:outbound_tracks, &Map.merge(&1, new_outbound_tracks))
-      |> maybe_restart_ice(true)
-
-    {{:ok, actions}, state}
+    state
+    |> Map.update!(:outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+    |> maybe_restart_ice(true)
   end
 
   defp maybe_restart_ice(state, set_waiting_restart? \\ false) do
@@ -783,7 +784,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       outbound_tracks = change_tracks_status(state, :pending, :ready)
       state = %{state | outbound_tracks: outbound_tracks}
 
-      {[forward: {:ice, :restart_stream}], state}
+      {[notify_child: {:ice, :restart_stream}], state}
     else
       {[], state}
     end
@@ -800,7 +801,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       video: Enum.count(tracks_types, &(&1 == :video))
     }
 
-    actions = [notify: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}]
+    actions = [
+      notify_parent: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}
+    ]
 
     if not state.ice.restarting?,
       do: Membrane.OpenTelemetry.start_span(@ice_restart_span_id, parent_id: @life_span_id)
@@ -853,7 +856,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> Map.update!(:ssrc_to_track_id, &Map.merge(&1, new_ssrc_to_track_id))
       |> Map.update!(:simulcast_track_ids, &(&1 ++ new_simulcast_track_ids))
 
-    actions = if Enum.empty?(new_tracks), do: [], else: [notify: {:new_tracks, new_tracks}]
+    actions = if Enum.empty?(new_tracks), do: [], else: [notify_parent: {:new_tracks, new_tracks}]
     {actions, state}
   end
 
@@ -895,7 +898,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   defp notify_candidates(candidates) do
     Enum.flat_map(candidates, fn cand ->
-      [notify: {:signal, {:candidate, cand, 0}}]
+      [notify_parent: {:signal, {:candidate, cand, 0}}]
     end)
   end
 
@@ -908,7 +911,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         {_key, ice_ufrag} = Media.get_attribute(media, :ice_ufrag)
         {_key, ice_pwd} = Media.get_attribute(media, :ice_pwd)
         remote_credentials = ice_ufrag <> " " <> ice_pwd
-        [forward: {:ice, {:set_remote_credentials, remote_credentials}}]
+        [notify_child: {:ice, {:set_remote_credentials, remote_credentials}}]
     end
   end
 
