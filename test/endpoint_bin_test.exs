@@ -2,6 +2,7 @@ defmodule Membrane.WebRTC.EndpointBinTest do
   use ExUnit.Case, async: true
 
   alias Membrane.WebRTC.EndpointBin
+  alias Membrane.WebRTC.Extension.{Mid, Rid}
   alias Membrane.WebRTC.Test.Utils
 
   @directions [:sendonly, :recvonly, :sendrecv]
@@ -138,7 +139,7 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     sdp_offer_msg = {:signal, {:sdp_offer, offer, mid_to_track_id}}
     handshake_init_data_not = {:handshake_init_data, 1, fingerprint}
 
-    options = %EndpointBin{direction: endpoint_bin_direction}
+    options = %EndpointBin{direction: endpoint_bin_direction, extensions: [Mid, Rid]}
     {{:ok, _spec}, state} = EndpointBin.handle_init(options)
     {:ok, state} = EndpointBin.handle_notification(handshake_init_data_not, nil, nil, state)
     {{:ok, actions}, _state} = EndpointBin.handle_other(sdp_offer_msg, nil, state)

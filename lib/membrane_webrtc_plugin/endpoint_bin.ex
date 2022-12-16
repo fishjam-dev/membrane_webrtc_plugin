@@ -866,10 +866,25 @@ defmodule Membrane.WebRTC.EndpointBin do
         rid_ext = Enum.find(track.extmaps, &(&1.uri == Extension.Rid.uri()))
         repaired_rid_ext = Enum.find(track.extmaps, &(&1.uri == Extension.RepairedRid.uri()))
 
-        [
-          {track.selected_encoding.payload_type, [mid_ext.id, rid_ext.id]},
-          {track.selected_encoding.rtx.payload_type, [mid_ext.id, repaired_rid_ext.id]}
-        ]
+        if Enum.any?([mid_ext, rid_ext], &is_nil/1) do
+          raise "Simulcast without mid or rid extensions is not supported!"
+        end
+
+        pt_to_ext_id = %{track.selected_encoding.payload_type => [mid_ext.id, rid_ext.id]}
+
+        cond do
+          is_nil(track.selected_encoding.rtx) ->
+            pt_to_ext_id
+
+          is_nil(repaired_rid_ext) ->
+            raise "RTX simulcast requires RepairedRid extension to be enabled!"
+
+          true ->
+            Map.put(pt_to_ext_id, track.selected_encoding.rtx.payload_type, [
+              mid_ext.id,
+              repaired_rid_ext.id
+            ])
+        end
       end)
       |> then(
         &[forward: {:rtp, %Membrane.RTP.SSRCRouter.RequireExtensions{pt_to_ext_id: Map.new(&1)}}]
