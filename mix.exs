@@ -50,7 +50,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:ex_sdp, "~> 0.9.0"},
       {:membrane_rtp_plugin,
        github: "membraneframework/membrane_rtp_plugin",
-       branch: "MV-181-rtx-packet-parser",
+       branch: "MV-100-handle-rtx-rtp-plugin",
        override: true},
       {:membrane_rtp_format, "~> 0.5.0"},
       {:membrane_ice_plugin, "~> 0.13.0"},

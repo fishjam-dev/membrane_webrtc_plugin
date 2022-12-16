@@ -944,13 +944,17 @@ defmodule Membrane.WebRTC.EndpointBin do
     track = Map.fetch!(state.inbound_tracks, track_id)
     track = %Track{track | rtx_ssrc: [ssrc | track.rtx_ssrc]}
 
+    rtp_extension_mapping =
+      Map.new(track.extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
+
     state = put_in(state, [:inbound_tracks, track.id], track)
 
-    rtx_info = %Membrane.RTP.SessionBin.RtxInfo{
+    rtx_info = %Membrane.RTP.SessionBin.RTXInfo{
       ssrc: ssrc,
       original_ssrc: original_ssrc,
-      rtx_payload_type: track.selected_encoding.rtx.payload_type,
-      original_payload_type: track.selected_encoding.payload_type
+      original_payload_type: track.selected_encoding.payload_type,
+      rid_id: rtp_extension_mapping[:rid],
+      repaired_rid_id: rtp_extension_mapping[:repaired_rid]
     }
 
     {[forward: {:rtp, rtx_info}], state}
@@ -1019,11 +1023,12 @@ defmodule Membrane.WebRTC.EndpointBin do
         {[notify: notification], state}
 
       rtx_ssrc ->
-        rtx_info = %Membrane.RTP.SessionBin.RtxInfo{
+        rtx_info = %Membrane.RTP.SessionBin.RTXInfo{
           ssrc: rtx_ssrc,
           original_ssrc: ssrc,
-          rtx_payload_type: track.selected_encoding.rtx.payload_type,
-          original_payload_type: track.selected_encoding.payload_type
+          original_payload_type: track.selected_encoding.payload_type,
+          rid_id: resolved_rtp_extensions[:rid],
+          repaired_rid_id: resolved_rtp_extensions[:repaired_rid]
         }
 
         {[notify: notification, forward: {:rtp, rtx_info}], state}
