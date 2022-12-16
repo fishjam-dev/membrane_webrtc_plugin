@@ -198,8 +198,8 @@ defmodule Membrane.WebRTC.SDP do
   @doc """
   Default value for filter_codecs option in `Membrane.WebRTC.EndpointBin`.
   """
-  @spec filter_mappings(Track.Encoding.t()) :: boolean()
-  def filter_mappings(%Track.Encoding{} = encoding) do
+  @spec filter_encodings(Track.Encoding.t()) :: boolean()
+  def filter_encodings(%Track.Encoding{} = encoding) do
     case encoding do
       %{name: "opus"} -> true
       %{name: "VP8"} -> true

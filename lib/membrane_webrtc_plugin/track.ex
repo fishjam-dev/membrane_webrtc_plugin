@@ -5,7 +5,7 @@ defmodule Membrane.WebRTC.Track do
   require Membrane.Logger
 
   alias Membrane.RTP
-  alias ExSDP.Attribute.{Extmap, FMTP}
+  alias ExSDP.Attribute.{Extmap, FMTP, RTPMapping}
   alias ExSDP.Media
   alias Membrane.WebRTC.Extension
 
@@ -42,7 +42,7 @@ defmodule Membrane.WebRTC.Track do
           name: String.t(),
           ssrc: RTP.ssrc_t() | [RTP.ssrc_t()],
           rtx_ssrc: RTP.ssrc_t() | [RTP.ssrc_t()] | nil,
-          selected_encoding_key: encoding_key,
+          selected_encoding_key: encoding_key(),
           offered_encodings: [__MODULE__.Encoding.t()],
           status: :pending | :ready | :linked | :disabled,
           mid: binary(),
@@ -132,17 +132,7 @@ defmodule Membrane.WebRTC.Track do
   """
   @spec from_sdp_media(ExSDP.Media.t(), id(), String.t()) :: t()
   def from_sdp_media(sdp_media, id, stream_id) do
-    rids =
-      sdp_media
-      |> Media.get_attributes("rid")
-      |> Enum.map(fn {_attr, rid} ->
-        # example from sdp
-        # a=rid:h send
-        # by rid we mean "h send"
-        rid |> String.split(" ", parts: 2) |> hd()
-      end)
-
-    rids = if(rids == [], do: nil, else: rids)
+    rids = get_rids(sdp_media)
 
     ssrc_group = Media.get_attribute(sdp_media, :ssrc_group)
     ssrc_attribute = Media.get_attribute(sdp_media, :ssrc)
@@ -166,67 +156,33 @@ defmodule Membrane.WebRTC.Track do
         :ready
       end
 
-    grouped_rtpmaps =
-      sdp_media
-      |> Media.get_attributes(:rtpmap)
-      |> Enum.group_by(fn
-        %{encoding: "rtx"} -> :rtx
-        %{encoding: "red"} -> :red
-        _other -> :codec
-      end)
-
-    fmtps_by_pt =
-      sdp_media
-      |> Media.get_attributes(:fmtp)
-      |> Map.new(&{&1.pt, &1})
-
-    rtx_streams =
-      grouped_rtpmaps
-      |> Map.get(:rtx, [])
-      |> Map.new(fn %{payload_type: pt} ->
-        fmtp = fmtps_by_pt |> Map.fetch!(pt)
-        {fmtp.apt, fmtp}
-      end)
-
-    red_streams =
-      grouped_rtpmaps
-      |> Map.get(:red, [])
-      |> Enum.flat_map(fn %{payload_type: pt} ->
-        case fmtps_by_pt |> Map.fetch(pt) do
-          {:ok, %FMTP{redundant_payloads: apts}} -> apts |> Enum.map(&{&1, pt})
-          # Chrome seems to offer an invalid "red" stream for video without FMTP ¯\_(ツ)_/¯
-          :error -> []
-        end
-      end)
-      |> Map.new()
-
     rtcp_feedbacks =
       sdp_media
       |> Media.get_attributes(:rtcp_feedback)
       |> Enum.group_by(& &1.pt)
 
     encodings =
-      grouped_rtpmaps.codec
-      |> Enum.map(fn %{payload_type: pt} = rtpmap ->
-        feedbacks = Map.get(rtcp_feedbacks, :all, []) ++ Map.get(rtcp_feedbacks, pt, [])
+      sdp_media
+      |> group_params()
+      |> Enum.map(fn {rtpmap, fmtps, rtx_fmtp, red_pt} ->
+        feedbacks =
+          Map.get(rtcp_feedbacks, :all, []) ++ Map.get(rtcp_feedbacks, rtpmap.payload_type, [])
 
         rtx_metadata =
-          rtx_streams
-          |> Map.get(pt)
-          |> case do
+          case rtx_fmtp do
             nil -> nil
             %FMTP{pt: pt, rtx_time: rtx_time} -> %{payload_type: pt, rtx_time: rtx_time}
           end
 
         %__MODULE__.Encoding{
-          payload_type: pt,
+          payload_type: rtpmap.payload_type,
           name: rtpmap.encoding,
           clock_rate: rtpmap.clock_rate,
           rtx: rtx_metadata,
-          red_payload_type: red_streams |> Map.get(pt),
+          red_payload_type: red_pt,
           audio_channels: rtpmap.params,
           rtcp_feedback: MapSet.new(feedbacks),
-          format_params: fmtps_by_pt |> Map.get(pt)
+          format_params: fmtps
         }
       end)
 
@@ -317,6 +273,69 @@ defmodule Membrane.WebRTC.Track do
     rids = Enum.join(track.rids, ", ")
 
     "{id: #{track.id}, mid: #{track.mid}, encoding: #{track.selected_encoding_key}, rids: [#{rids}]}"
+  end
+
+  # TODO: This should be handled by ExSDP
+  defp get_rids(sdp_media) do
+    sdp_media
+    |> Media.get_attributes("rid")
+    |> Enum.map(fn {_attr, rid} ->
+      # example from sdp
+      # a=rid:h send
+      # by rid we mean "h send"
+      rid |> String.split(" ", parts: 2) |> hd()
+    end)
+    |> case do
+      [] -> nil
+      rids -> rids
+    end
+  end
+
+  defp group_params(sdp_media) do
+    # Separate real codecs from RTX and RED streams
+    grouped_rtpmaps =
+      sdp_media
+      |> Media.get_attributes(:rtpmap)
+      |> Enum.group_by(fn
+        %{encoding: "rtx"} -> :rtx
+        %{encoding: "red"} -> :red
+        _other -> :codec
+      end)
+
+    fmtps_by_pt =
+      sdp_media
+      |> Media.get_attributes(:fmtp)
+      |> Map.new(&{&1.pt, &1})
+
+    rtx_fmtp_by_apt =
+      grouped_rtpmaps
+      |> Map.get(:rtx, [])
+      |> Map.new(fn %RTPMapping{payload_type: pt} ->
+        fmtp = fmtps_by_pt |> Map.fetch!(pt)
+        {fmtp.apt, fmtp}
+      end)
+
+    red_pt_by_apt =
+      grouped_rtpmaps
+      |> Map.get(:red, [])
+      |> Enum.flat_map(fn %RTPMapping{payload_type: pt} ->
+        case fmtps_by_pt |> Map.fetch(pt) do
+          {:ok, %FMTP{redundant_payloads: apts}} -> apts |> Enum.map(&{&1, pt})
+          # Chrome seems to offer an invalid "red" stream for video without FMTP ¯\_(ツ)_/¯
+          :error -> []
+        end
+      end)
+      |> Map.new()
+
+    grouped_rtpmaps
+    |> Map.get(:codec, [])
+    |> Enum.map(fn %RTPMapping{payload_type: pt} = rtpmap ->
+      fmtps = fmtps_by_pt[pt]
+      rtx_fmtp = rtx_fmtp_by_apt[pt]
+      red_payload_type = red_pt_by_apt[pt]
+
+      {rtpmap, fmtps, rtx_fmtp, red_payload_type}
+    end)
   end
 
   defp encoding_to_atom(encoding_name) do

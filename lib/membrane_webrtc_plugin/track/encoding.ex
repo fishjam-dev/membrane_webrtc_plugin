@@ -10,10 +10,10 @@ defmodule Membrane.WebRTC.Track.Encoding do
           name: String.t(),
           clock_rate: pos_integer(),
           rtx: %{payload_type: non_neg_integer(), rtx_time: non_neg_integer() | nil} | nil,
-          red_payload_type: non_neg_integer(),
-          audio_channels: pos_integer(),
+          red_payload_type: non_neg_integer() | nil,
+          audio_channels: pos_integer() | nil,
           rtcp_feedback: MapSet.t(RTCPFeedback.t()),
-          format_params: FMTP.t()
+          format_params: FMTP.t() | nil
         }
 
   @enforce_keys [:payload_type, :name, :clock_rate]

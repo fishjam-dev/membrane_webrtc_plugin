@@ -90,7 +90,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               ],
               filter_codecs: [
                 spec: (Membrane.WebRTC.Track.Encoding.t() -> boolean()),
-                default: &SDP.filter_mappings(&1),
+                default: &SDP.filter_encodings(&1),
                 description: "Defines function which will filter SDP m-line by codecs"
               ],
               extensions: [
@@ -234,7 +234,7 @@ defmodule Membrane.WebRTC.EndpointBin do
               ssrc_to_track_id: %{},
               rtx_ssrc_to_track_id: %{},
               pending_rtx: %{},
-              filter_codecs: &SDP.filter_mappings(&1),
+              filter_codecs: &SDP.filter_encodings(&1),
               extensions: [],
               integrated_turn_servers: [],
               component_path: "",
