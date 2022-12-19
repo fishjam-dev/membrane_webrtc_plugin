@@ -55,7 +55,6 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_ice_plugin, "~> 0.14.0"},
       {:membrane_funnel_plugin, "~> 0.7.0"},
       {:membrane_h264_ffmpeg_plugin, "~> 0.25.0"},
-      # FIXME change after VP8 release
       {:membrane_rtp_vp8_plugin, "~> 0.7.0"},
       {:membrane_rtp_h264_plugin, "~> 0.14.0"},
       # FIXME: put back
