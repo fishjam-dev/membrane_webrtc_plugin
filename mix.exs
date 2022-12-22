@@ -62,11 +62,11 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:ex_libsrtp, ">= 0.0.0"},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
-      {:credo, "~> 1.6", only: :dev, runtime: false}
+      {:credo, "~> 1.6", only: :dev, runtime: false},
 
       # Otel
-      # {:opentelemetry_api, "~> 1.0"},
-      # {:opentelemetry, "~> 1.0.4"}
+      {:opentelemetry_api, "~> 1.0"},
+      {:opentelemetry, "~> 1.0.4"}
     ]
   end
 
