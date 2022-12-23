@@ -41,7 +41,7 @@ defmodule Membrane.WebRTC.Extension do
   `:inbound`/`:outbound` denotes track type this extension was specified for.
   """
   @callback get_rtp_module(Extmap.extension_id(), Keyword.t(), :inbound | :outbound) ::
-              Membrane.ParentSpec.child_spec_t() | :no_rtp_module
+              Membrane.ChildrenSpec.child_definition_t() | :no_rtp_module
 
   @doc """
   Adds information about extension to an SDP media.
@@ -92,7 +92,7 @@ defmodule Membrane.WebRTC.Extension do
   `:inbound`/`:outbound` denotes track type `extmap` was specified for.
   """
   @spec as_rtp_extension([t()], Extmap.t(), :inbound | :outbound) ::
-          RTP.SessionBin.rtp_extension_options_t()
+          RTP.SessionBin.rtp_extension_option_t()
   def as_rtp_extension(extensions, extmap, track_type) do
     extension = from_extmap(extensions, extmap)
     {extension.name, extension.module.get_rtp_module(extmap.id, extension.rtp_opts, track_type)}

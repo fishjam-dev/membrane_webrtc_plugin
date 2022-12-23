@@ -1,6 +1,8 @@
 defmodule Membrane.WebRTC.EndpointBinTest do
   use ExUnit.Case, async: true
 
+  import Membrane.ChildrenSpec
+
   alias Membrane.WebRTC.EndpointBin
   alias Membrane.WebRTC.Test.Utils
 
@@ -8,12 +10,12 @@ defmodule Membrane.WebRTC.EndpointBinTest do
 
   Enum.map(@directions, fn direction ->
     test "creating #{inspect(direction)} EndpointBin with empty inbound and outbound tracks passes" do
-      children = [
-        endpoint: %EndpointBin{direction: unquote(direction)}
-      ]
+      pipeline =
+        Membrane.Testing.Pipeline.start_link_supervised!(
+          structure: child(:endpoint, %EndpointBin{direction: unquote(direction)})
+        )
 
-      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
-      Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
+      Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
     end
   end)
 
@@ -23,7 +25,7 @@ defmodule Membrane.WebRTC.EndpointBinTest do
 
     assert_raise RuntimeError,
                  ~r/Cannot add inbound tracks when EndpointBin is set to :sendonly./,
-                 fn -> EndpointBin.handle_init(options) end
+                 fn -> EndpointBin.handle_init(nil, options) end
   end
 
   test "creating recvonly EndpointBin with outbound tracks raises an error" do
@@ -32,19 +34,20 @@ defmodule Membrane.WebRTC.EndpointBinTest do
 
     assert_raise RuntimeError,
                  ~r/Cannot add outbound tracks when EndpointBin is set to :recvonly./,
-                 fn -> EndpointBin.handle_init(options) end
+                 fn -> EndpointBin.handle_init(nil, options) end
   end
 
   Enum.map([:recvonly, :sendrecv], fn direction ->
     test "creatinig #{inspect(direction)} EndpointBin with inbound tracks passes" do
       track = Utils.get_track()
 
-      children = [
-        endpoint: %EndpointBin{direction: unquote(direction), inbound_tracks: [track]}
-      ]
+      pipeline =
+        Membrane.Testing.Pipeline.start_link_supervised!(
+          structure:
+            child(:endpoint, %EndpointBin{direction: unquote(direction), inbound_tracks: [track]})
+        )
 
-      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
-      :ok = Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
+      :ok = Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
     end
   end)
 
@@ -52,32 +55,32 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     test "creatinig #{inspect(direction)} EndpointBin with outbound tracks passes" do
       track = Utils.get_track()
 
-      children = [
-        endpoint: %EndpointBin{direction: unquote(direction), outbound_tracks: [track]}
-      ]
+      pipeline =
+        Membrane.Testing.Pipeline.start_link_supervised!(
+          structure:
+            child(:endpoint, %EndpointBin{direction: unquote(direction), outbound_tracks: [track]})
+        )
 
-      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
-      :ok = Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
+      :ok = Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
     end
   end)
 
-  @tag :debug
   test "adding outbound tracks to :recvonly EndpointBin causes raise" do
     options = %EndpointBin{direction: :recvonly}
-    {{:ok, _spec}, state} = EndpointBin.handle_init(options)
+    {_spec, state} = EndpointBin.handle_init(nil, options)
     track = Utils.get_track()
 
     assert_raise RuntimeError, fn ->
-      EndpointBin.handle_other({:add_tracks, [track]}, nil, state)
+      EndpointBin.handle_parent_notification({:add_tracks, [track]}, nil, state)
     end
   end
 
   Enum.map([:sendonly, :sendrecv], fn direction ->
     test "adding outbound tracks to #{inspect(direction)} EndpointBin passes" do
       options = %EndpointBin{direction: unquote(direction)}
-      {{:ok, _spec}, state} = EndpointBin.handle_init(options)
+      {_spec, state} = EndpointBin.handle_init(nil, options)
       track = Utils.get_track()
-      assert EndpointBin.handle_other({:add_tracks, [track]}, nil, state)
+      assert EndpointBin.handle_parent_notification({:add_tracks, [track]}, nil, state)
     end
   end)
 
@@ -98,22 +101,22 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     handshake_init_data_not = {:handshake_init_data, 1, <<>>}
     options = %EndpointBin{direction: :sendrecv, outbound_tracks: [track]}
 
-    {{:ok, _spec}, state} = EndpointBin.handle_init(options)
-    {:ok, state} = EndpointBin.handle_notification(handshake_init_data_not, nil, nil, state)
+    {_spec, state} = EndpointBin.handle_init(nil, options)
+    {[], state} = EndpointBin.handle_child_notification(handshake_init_data_not, nil, nil, state)
 
     assert_raise RuntimeError,
                  "Received new outbound tracks in SDP offer which is not allowed.",
-                 fn -> EndpointBin.handle_other(sdp_offer_msg, nil, state) end
+                 fn -> EndpointBin.handle_parent_notification(sdp_offer_msg, nil, state) end
   end
 
   test "sendonly EndpointBin raises when receives RTP stream" do
     options = %EndpointBin{direction: :sendonly}
-    {{:ok, _spec}, state} = EndpointBin.handle_init(options)
+    {_spec, state} = EndpointBin.handle_init(nil, options)
 
     assert_raise RuntimeError,
                  ~r/Received new RTP stream but EndpointBin is set to :sendonly./,
                  fn ->
-                   EndpointBin.handle_notification(
+                   EndpointBin.handle_child_notification(
                      {:new_rtp_stream, 1234, 96, []},
                      nil,
                      nil,
@@ -139,16 +142,15 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     handshake_init_data_not = {:handshake_init_data, 1, fingerprint}
 
     options = %EndpointBin{direction: endpoint_bin_direction}
-    {{:ok, _spec}, state} = EndpointBin.handle_init(options)
-    {:ok, state} = EndpointBin.handle_notification(handshake_init_data_not, nil, nil, state)
-    {{:ok, actions}, _state} = EndpointBin.handle_other(sdp_offer_msg, nil, state)
+    {_spec, state} = EndpointBin.handle_init(nil, options)
+    {[], state} = EndpointBin.handle_child_notification(handshake_init_data_not, nil, nil, state)
+    {actions, _state} = EndpointBin.handle_parent_notification(sdp_offer_msg, nil, state)
 
-    sdp_answer_action =
-      Enum.find(actions, fn action ->
-        match?({:notify, {:signal, {:sdp_answer, _answer, _mid_to_track_id}}}, action)
-      end)
-
-    {:notify, {:signal, {:sdp_answer, answer, _mid_to_track_id}}} = sdp_answer_action
+    assert [answer] =
+             Enum.flat_map(actions, fn
+               {:notify_parent, {:signal, {:sdp_answer, answer, _mid_to_track_id}}} -> [answer]
+               _action -> []
+             end)
 
     ExSDP.parse!(answer)
     |> then(& &1.media)
