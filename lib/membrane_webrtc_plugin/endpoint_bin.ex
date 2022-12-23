@@ -344,8 +344,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     encoding_specific_links =
       case encoding do
         :H264 when use_payloader? ->
-          # &to(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
-          raise "Unsupported"
+          &child(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
 
         _other ->
           & &1
@@ -705,7 +704,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :remote_candidate, candidate: candidate)
 
-    # {[notify_child: {:ice, {:set_remote_candidate, candidate, 1}}], state}
+    # TODO: decide what to do with this candidate
     {[], state}
   end
 
