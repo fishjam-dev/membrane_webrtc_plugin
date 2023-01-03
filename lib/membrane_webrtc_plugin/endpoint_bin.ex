@@ -2,9 +2,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   @moduledoc """
   Module responsible for interacting with a WebRTC peer.
 
-  To send or receive tracks from a WebRTC peer, specify them with
-  `:inbound_tracks` and `:outbound_tracks` options, and link corresponding
-  `:input` and `:output` pads with ids matching the declared tracks' ids.
+  New tracks are specified by SDP negotiation conducted by messages
+  `t:signal_message/0`, and then linking corresponding
+  `:input` and `:output` pads with ids reported via `t:new_track_notification/0`
 
   The tracks can be manipulated by sending `t:track_message/0`.
 
@@ -17,6 +17,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   require Membrane.Logger
   require Membrane.OpenTelemetry
 
+  alias __MODULE__.TracksState
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.ICE
@@ -29,6 +30,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   @life_span_id "endpoint_bin.life_span"
   @ice_restart_span_id "endpoint_bin.ice_restart"
 
+  @type new_track_notification ::
+          {:new_track, Track.id(), nil | Track.Encoding.rid(), RTP.ssrc_t(), Track.encoding_key(),
+           depayloading_filter :: module()}
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
 
@@ -37,7 +41,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   @typedoc """
   Message that adds or removes tracks.
   """
-  @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.id()]}
+  @type alter_tracks_message :: {:add_tracks, [Track.t()]} | {:remove_tracks, [Track.t()]}
 
   @typedoc """
   Type describing possible media flow directions.
@@ -48,17 +52,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   """
   @type direction() :: :recvonly | :sendonly | :sendrecv
 
-  def_options inbound_tracks: [
-                spec: [Membrane.WebRTC.Track.t()],
-                default: [],
-                description: "List of initial inbound tracks"
-              ],
-              outbound_tracks: [
-                spec: [Membrane.WebRTC.Track.t()],
-                default: [],
-                description: "List of initial outbound tracks"
-              ],
-              direction: [
+  def_options direction: [
                 spec: direction(),
                 default: :sendrecv,
                 description: """
@@ -182,28 +176,18 @@ defmodule Membrane.WebRTC.EndpointBin do
     @moduledoc false
     use Bunch.Access
 
-    @typedoc """
-    * `simulcast_track_ids` - list of simulcast track ids.
-    * `ssrc_to_track_id` - maps inbound track ssrc to its id.
-    If track is a simulcast track it might not be in this list until
-    we receive its first RTP packets. This is beacuse simulcast tracks
-    don't announce their SSRCs in SDP. Instead, we have to wait for
-    their first RTP packets. There might be many SSRC pointing to the same track.
-    """
+    alias Membrane.WebRTC.EndpointBin.TracksState
+
     @type t :: %__MODULE__{
             id: String.t(),
             trace_metadata: Keyword.t(),
             log_metadata: Keyword.t(),
-            inbound_tracks: %{Track.id() => Track.t()},
-            outbound_tracks: %{Track.id() => Track.t()},
+            tracks: TracksState.t(),
             endpoint_direction: Membrane.WebRTC.EndpointBin.direction(),
             rtcp_sender_report_interval: Membrane.Time.t() | nil,
             candidates: [any()],
             candidate_gathering_state: nil | :in_progress | :done,
             dtls_fingerprint: nil | {:sha256, binary()},
-            simulcast_track_ids: [Track.id()],
-            ssrc_to_track_id: %{RTP.ssrc_t() => Track.id()},
-            rtx_ssrc_to_track_id: %{RTP.ssrc_t() => Track.id()},
             pending_rtx: %{Track.id() => {Track.rid(), RTP.ssrc_t()}},
             filter_codecs: ({RTPMapping.t(), FMTP.t() | nil} -> boolean()),
             extensions: [Extension.t()],
@@ -223,16 +207,12 @@ defmodule Membrane.WebRTC.EndpointBin do
     defstruct id: "endpointBin",
               trace_metadata: [],
               log_metadata: [],
-              inbound_tracks: %{},
-              outbound_tracks: %{},
+              tracks: %TracksState{},
               endpoint_direction: :sendrecv,
               rtcp_sender_report_interval: nil,
               candidates: [],
               candidate_gathering_state: nil,
               dtls_fingerprint: nil,
-              simulcast_track_ids: [],
-              ssrc_to_track_id: %{},
-              rtx_ssrc_to_track_id: %{},
               pending_rtx: %{},
               filter_codecs: &SDP.filter_encodings(&1),
               extensions: [],
@@ -302,37 +282,21 @@ defmodule Membrane.WebRTC.EndpointBin do
       log_metadata: opts.log_metadata
     }
 
-    state =
-      %State{
-        id: Keyword.get(trace_metadata, :name, "endpointBin"),
-        trace_metadata: trace_metadata,
-        log_metadata: opts.log_metadata,
-        inbound_tracks: %{},
-        outbound_tracks: %{},
-        endpoint_direction: opts.direction,
-        rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
-        candidates: [],
-        candidate_gathering_state: nil,
-        dtls_fingerprint: nil,
-        ssrc_to_track_id: %{},
-        rtx_ssrc_to_track_id: %{},
-        pending_rtx: %{},
-        filter_codecs: opts.filter_codecs,
-        integrated_turn_servers: ICE.TURNManager.get_launched_turn_servers(),
-        extensions: Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new())),
-        component_path: Membrane.ComponentPath.get_formatted(),
-        simulcast?: opts.simulcast?,
-        telemetry_label: opts.telemetry_label,
-        ice: %{
-          restarting?: false,
-          waiting_restart?: false,
-          pwd: nil,
-          ufrag: nil,
-          first?: true
-        }
-      }
-      |> add_tracks(:inbound_tracks, opts.inbound_tracks)
-      |> add_tracks(:outbound_tracks, opts.outbound_tracks)
+    extensions = Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new()))
+
+    state = %State{
+      id: Keyword.get(trace_metadata, :name, "endpointBin"),
+      trace_metadata: trace_metadata,
+      log_metadata: opts.log_metadata,
+      endpoint_direction: opts.direction,
+      rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
+      filter_codecs: opts.filter_codecs,
+      integrated_turn_servers: ICE.TURNManager.get_launched_turn_servers(),
+      extensions: extensions,
+      component_path: Membrane.ComponentPath.get_formatted(),
+      simulcast?: opts.simulcast?,
+      telemetry_label: opts.telemetry_label
+    }
 
     {{:ok, spec: spec}, state}
   end
@@ -347,7 +311,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       selected_encoding_key: encoding_key,
       selected_encoding: encoding,
       extmaps: extmaps
-    } = Map.fetch!(state.outbound_tracks, track_id)
+    } = Map.fetch!(state.tracks.outbound, track_id)
 
     rtp_extension_mapping = Map.new(extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
 
@@ -402,7 +366,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       selected_encoding_key: encoding_key,
       selected_encoding: encoding,
       extmaps: extmaps
-    } = track = Map.fetch!(state.inbound_tracks, track_id)
+    } = track = Map.fetch!(state.tracks.inbound, track_id)
 
     # if `rid` is set, it is a request for specific encoding of simulcast track
     # choose ssrc which corresponds to given `rid`
@@ -440,7 +404,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       ]
     }
 
-    state = put_in(state, [:inbound_tracks, track_id], %{track | status: :linked})
+    state = put_in(state, [:tracks, :inbound, track_id], %{track | status: :linked})
 
     {{:ok, spec: spec}, state}
   end
@@ -463,50 +427,24 @@ defmodule Membrane.WebRTC.EndpointBin do
         {:new_rtp_stream, ssrc, pt, rtp_header_extensions},
         _from,
         _ctx,
-        state
+        %State{} = state
       ) do
-    rtx_enabled_tracks =
-      state.inbound_tracks
-      |> Enum.reject(fn {_id, track} -> is_nil(track.selected_encoding.rtx) end)
-      |> Enum.map(&elem(&1, 1))
+    track_info =
+      TracksState.identify_inbound_stream(
+        state.tracks,
+        ssrc,
+        pt,
+        rtp_header_extensions,
+        state.extensions
+      )
 
-    rtx_pts =
-      rtx_enabled_tracks
-      |> MapSet.new(& &1.selected_encoding.rtx.payload_type)
+    state = %State{state | tracks: TracksState.register_stream(state.tracks, track_info, ssrc)}
+    {_cast_type, encoding_type, rid, track_id} = track_info
 
     {actions, state} =
-      cond do
-        # RTX in regular track
-        Map.has_key?(state.rtx_ssrc_to_track_id, ssrc) ->
-          track_id = state.rtx_ssrc_to_track_id[ssrc]
-          handle_new_rtx_stream(ssrc, state.inbound_tracks[track_id].ssrc, state)
-
-        # RTX in simulcast
-        pt in rtx_pts ->
-          track =
-            find_track_by_mid(
-              rtx_enabled_tracks,
-              state.extensions,
-              rtp_header_extensions
-            )
-
-          state = put_in(state.rtx_ssrc_to_track_id[ssrc], track.id)
-
-          resolved_rtp_extensions =
-            SDP.resolve_rtp_header_extensions(track, rtp_header_extensions, state.extensions)
-
-          rid = Map.get(resolved_rtp_extensions, :repaired_rid)
-
-          case Map.fetch(track.rid_to_ssrc, rid) do
-            :error ->
-              {[], put_in(state.pending_rtx[{track.id, rid}], ssrc)}
-
-            {:ok, original_ssrc} ->
-              handle_new_rtx_stream(ssrc, original_ssrc, state)
-          end
-
-        true ->
-          handle_new_rtp_stream(ssrc, pt, rtp_header_extensions, state)
+      case encoding_type do
+        :rtx -> handle_new_rtx_stream(ssrc, track_id, rid, state)
+        :media -> handle_new_rtp_stream(ssrc, track_id, rid, state)
       end
 
     {{:ok, actions}, state}
@@ -522,7 +460,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     [ice_ufrag, ice_pwd] = String.split(credentials, " ")
 
     {actions, state} =
-      if state.ice.first? and state.outbound_tracks == %{} do
+      if state.ice.first? and state.tracks.outbound == %{} do
         {[], state}
       else
         state = Map.update!(state, :ice, &%{&1 | first?: false})
@@ -572,17 +510,17 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     Membrane.OpenTelemetry.end_span(@ice_restart_span_id)
 
-    outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
-
     new_outbound_tracks =
-      outbound_tracks
+      state.tracks.outbound
+      |> Map.values()
       |> Enum.filter(&(&1.status === :ready))
 
     negotiations = [notify: {:negotiation_done, new_outbound_tracks}]
 
-    state = %{state | outbound_tracks: change_tracks_status(state, :ready, :linked)}
-
-    state = %{state | ice: %{state.ice | restarting?: false}}
+    state =
+      state
+      |> Map.update!(:tracks, &TracksState.change_outbound_status(&1, :ready, :linked))
+      |> put_in([:ice, :restarting?], false)
 
     {restart_action, state} = maybe_restart_ice(state)
 
@@ -610,10 +548,10 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_notification(_notification, _from, _ctx, state), do: {:ok, state}
 
   @impl true
-  def handle_other({:signal, {:sdp_offer, sdp, mid_to_track_id}}, _ctx, state) do
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_offer, sdp: sdp)
+  def handle_other({:signal, {:sdp_offer, raw_sdp, mid_to_track_id}}, _ctx, state) do
+    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_offer, sdp: raw_sdp)
 
-    {:ok, sdp} = sdp |> ExSDP.parse()
+    sdp = ExSDP.parse!(raw_sdp)
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
@@ -633,20 +571,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
     end
 
-    state =
-      removed_inbound_tracks
-      |> Enum.map(fn track -> track.id end)
-      |> then(fn removed_inbound_track_ids ->
-        update_in(state, [:simulcast_track_ids], &(&1 -- removed_inbound_track_ids))
-      end)
-
-    state = %{
-      state
-      | outbound_tracks: Map.merge(state.outbound_tracks, Map.new(outbound_tracks, &{&1.id, &1})),
-        inbound_tracks: Map.merge(state.inbound_tracks, Map.new(inbound_tracks, &{&1.id, &1}))
-    }
-
-    {link_notify, state} = add_inbound_tracks(new_inbound_tracks, state)
+    # TODO: There was a merge of tracks from sdp with existing ones, check if it's needed
+    state = TracksState.add_inbound_tracks(state, new_inbound_tracks)
+    new_actions = new_tracks_actions(new_inbound_tracks)
 
     answer =
       SDP.create_answer(
@@ -660,7 +587,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       )
 
     {actions, state} =
-      withl tracks_check: true <- state.inbound_tracks != %{} or state.outbound_tracks != %{},
+      withl tracks_check: false <- TracksState.empty?(state.tracks),
             candidate_gathering_check: nil <- state.candidate_gathering_state do
         {[forward: [ice: :gather_candidates]], %{state | candidate_gathering_state: :in_progress}}
       else
@@ -677,7 +604,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         else: actions ++ [notify: {:removed_tracks, removed_inbound_tracks}]
 
     actions =
-      link_notify ++
+      new_actions ++
         [notify: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
         actions
@@ -719,33 +646,27 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
+  def handle_other({:add_tracks, _tracks}, _ctx, %State{endpoint_direction: :recvonly}) do
+    raise """
+    Cannot add outbound tracks when EndpointBin is set to :recvonly.
+    You can add outbound tracks only when EndpointBin is set to :sendonly or :sendrecv.
+    """
+  end
+
   def handle_other({:add_tracks, tracks}, _ctx, state) do
-    outbound_tracks = state.outbound_tracks
-
-    tracks =
-      Enum.map(tracks, fn track ->
-        if Map.has_key?(outbound_tracks, track.id),
-          do: track,
-          else: %{track | status: :pending, mid: nil}
-      end)
-
-    state = add_tracks(state, :outbound_tracks, tracks)
+    state = %{state | tracks: TracksState.add_outbound_tracks(state, tracks)}
 
     {action, state} =
-      cond do
-        state.ice.first? and state.ice.pwd != nil ->
-          state = Map.update!(state, :ice, &%{&1 | first?: false})
-          outbound_tracks = change_tracks_status(state, :pending, :ready)
-          state = %{state | outbound_tracks: outbound_tracks}
-          get_offer_data(state)
-
-        state.ice.first? and state.ice.pwd == nil ->
-          outbound_tracks = change_tracks_status(state, :pending, :ready)
-          state = %{state | outbound_tracks: outbound_tracks}
-          {[], update_in(state, [:ice, :first?], fn _old_value -> false end)}
-
-        true ->
-          maybe_restart_ice(state, true)
+      if state.ice.first? do
+        state
+        |> put_in([:ice, :first?], false)
+        |> update_in([:tracks], &TracksState.change_outbound_status(&1, :pending, :ready))
+        |> case do
+          %{ice: %{pwd: nil}} = state -> {[], state}
+          state -> get_offer_data(state)
+        end
+      else
+        maybe_restart_ice(state, true)
       end
 
     {{:ok, action}, state}
@@ -753,15 +674,9 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_other({:remove_tracks, tracks_to_remove}, _ctx, state) do
-    outbound_tracks = state.outbound_tracks
-
-    new_outbound_tracks =
-      Enum.map(tracks_to_remove, &Map.get(outbound_tracks, &1.id))
-      |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
-
     {actions, state} =
       state
-      |> Map.update!(:outbound_tracks, &Map.merge(&1, new_outbound_tracks))
+      |> Map.update!(:tracks, &TracksState.disable_tracks(&1, tracks_to_remove))
       |> maybe_restart_ice(true)
 
     {{:ok, actions}, state}
@@ -776,9 +691,11 @@ defmodule Membrane.WebRTC.EndpointBin do
     if not state.ice.restarting? and state.ice.waiting_restart? do
       Membrane.OpenTelemetry.start_span(@ice_restart_span_id, parent_id: @life_span_id)
 
-      state = %{state | ice: %{state.ice | restarting?: true, waiting_restart?: false}}
-      outbound_tracks = change_tracks_status(state, :pending, :ready)
-      state = %{state | outbound_tracks: outbound_tracks}
+      state =
+        state
+        |> put_in([:ice, :restarting?], true)
+        |> put_in([:ice, :waiting_restart?], false)
+        |> update_in([:tracks], &TracksState.change_outbound_status(&1, :pending, :ready))
 
       {[forward: {:ice, :restart_stream}], state}
     else
@@ -788,7 +705,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   defp get_offer_data(state) do
     tracks_types =
-      Map.values(state.outbound_tracks)
+      Map.values(state.tracks.outbound)
       |> Enum.filter(&(&1.status != :pending))
       |> Enum.map(& &1.type)
 
@@ -807,18 +724,10 @@ defmodule Membrane.WebRTC.EndpointBin do
     {actions, state}
   end
 
-  defp change_tracks_status(state, prev_status, new_status) do
-    state.outbound_tracks
-    |> Map.values()
-    |> Map.new(fn track ->
-      {track.id, if(track.status === prev_status, do: %{track | status: new_status}, else: track)}
-    end)
-  end
-
   defp get_tracks_from_sdp(sdp, mid_to_track_id, state) do
-    old_inbound_tracks = Map.values(state.inbound_tracks)
+    old_inbound_tracks = Map.values(state.tracks.inbound)
 
-    outbound_tracks = Map.values(state.outbound_tracks) |> Enum.filter(&(&1.status != :pending))
+    outbound_tracks = Map.values(state.tracks.outbound) |> Enum.filter(&(&1.status != :pending))
 
     constraints = %Track.Constraints{
       codecs_filter: state.filter_codecs,
@@ -830,43 +739,22 @@ defmodule Membrane.WebRTC.EndpointBin do
     SDP.get_tracks(sdp, constraints, old_inbound_tracks, outbound_tracks, mid_to_track_id)
   end
 
-  defp add_inbound_tracks([], state) do
-    {[], state}
+  defp new_tracks_actions([]) do
+    []
   end
 
-  defp add_inbound_tracks(new_tracks, state) do
-    new_track_id_to_track = Map.new(new_tracks, &{&1.id, &1})
-    state = Map.update!(state, :inbound_tracks, &Map.merge(&1, new_track_id_to_track))
-
-    {new_simulcast_tracks, new_casual_tracks} = Enum.split_with(new_tracks, &(&1.ssrc == []))
-
-    new_ssrc_to_track_id = Map.new(new_casual_tracks, fn track -> {track.ssrc, track.id} end)
-
-    new_rtx_ssrc_to_track_id =
-      new_casual_tracks
-      |> Enum.reject(fn track -> is_nil(track.rtx_ssrc) end)
-      |> Map.new(fn track -> {track.rtx_ssrc, track.id} end)
-
-    new_simulcast_track_ids =
-      state.simulcast_track_ids ++ Enum.map(new_simulcast_tracks, fn track -> track.id end)
-
-    state = %State{
-      state
-      | ssrc_to_track_id: Map.merge(state.ssrc_to_track_id, new_ssrc_to_track_id),
-        simulcast_track_ids: new_simulcast_track_ids,
-        rtx_ssrc_to_track_id: Map.merge(state.rtx_ssrc_to_track_id, new_rtx_ssrc_to_track_id)
-    }
-
-    actions = if Enum.empty?(new_tracks), do: [], else: [notify: {:new_tracks, new_tracks}]
+  defp new_tracks_actions(new_tracks) do
+    notify = [notify: {:new_tracks, new_tracks}]
 
     forward =
-      new_simulcast_tracks
+      new_tracks
+      |> Enum.filter(&Track.simulcast?/1)
       |> Enum.flat_map(fn track ->
         mid_ext = Enum.find(track.extmaps, &(&1.uri == Extension.Mid.uri()))
         rid_ext = Enum.find(track.extmaps, &(&1.uri == Extension.Rid.uri()))
         repaired_rid_ext = Enum.find(track.extmaps, &(&1.uri == Extension.RepairedRid.uri()))
 
-        if Enum.any?([mid_ext, rid_ext], &is_nil/1) do
+        if is_nil(mid_ext) or is_nil(rid_ext) do
           raise "Simulcast without mid or rid extensions is not supported!"
         end
 
@@ -890,43 +778,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         &[forward: {:rtp, %Membrane.RTP.SSRCRouter.RequireExtensions{pt_to_ext_id: Map.new(&1)}}]
       )
 
-    {forward ++ actions, state}
-  end
-
-  defp add_tracks(state, _tracks_type, []), do: state
-
-  defp add_tracks(state, tracks_type, tracks) do
-    cond do
-      tracks_type == :inbound_tracks and state.endpoint_direction == :sendonly ->
-        raise """
-        Cannot add inbound tracks when EndpointBin is set to #{inspect(state.endpoint_direction)}.
-        You can add inbound tracks only when EndpointBin is set to :recvonly or :sendrecv.
-        """
-
-      tracks_type == :outbound_tracks and state.endpoint_direction == :recvonly ->
-        raise """
-        Cannot add outbound tracks when EndpointBin is set to #{inspect(state.endpoint_direction)}.
-        You can add outbound tracks only when EndpointBin is set to :sendonly or :sendrecv.
-        """
-
-      true ->
-        :ok
-    end
-
-    tracks =
-      case tracks_type do
-        :outbound_tracks ->
-          Track.add_ssrc(
-            tracks,
-            Map.values(state.inbound_tracks) ++ Map.values(state.outbound_tracks)
-          )
-
-        :inbound_tracks ->
-          tracks
-      end
-
-    tracks = Map.new(tracks, &{&1.id, &1})
-    Map.update!(state, tracks_type, &Map.merge(&1, tracks))
+    forward ++ notify
   end
 
   defp notify_candidates(candidates) do
@@ -954,15 +806,48 @@ defmodule Membrane.WebRTC.EndpointBin do
     |> Enum.map_join(":", &Base.encode16(<<&1>>))
   end
 
-  defp handle_new_rtx_stream(ssrc, original_ssrc, state) do
-    track_id = Map.get(state.rtx_ssrc_to_track_id, ssrc)
-    track = Map.fetch!(state.inbound_tracks, track_id)
-    track = %Track{track | rtx_ssrc: [ssrc | track.rtx_ssrc]}
+  defp handle_new_rtx_stream(ssrc, track_id, nil, state) do
+    # non-simulcast RTX, track.ssrc is not a list
+    track = Map.fetch!(state.tracks.inbound, track_id)
+    actions = rtx_info_actions(ssrc, track.ssrc, track, state.extensions)
+    {actions, state}
+  end
 
-    rtp_extension_mapping =
-      Map.new(track.extmaps, &Extension.as_rtp_mapping(state.extensions, &1))
+  defp handle_new_rtx_stream(ssrc, track_id, rid, state) do
+    # simulcast RTX, we need a mapping from rid to ssrc
+    case Map.fetch(state.rid_to_ssrc, rid) do
+      :error ->
+        {[], put_in(state.pending_rtx[{track_id, rid}], ssrc)}
 
-    state = put_in(state, [:inbound_tracks, track.id], track)
+      original_ssrc ->
+        track = Map.fetch!(state.tracks.inbound, track_id)
+        actions = rtx_info_actions(ssrc, original_ssrc, track, state.extensions)
+        {actions, state}
+    end
+  end
+
+  defp handle_new_rtp_stream(ssrc, track_id, rid, state) do
+    track = Map.fetch!(state.tracks.inbound, track_id)
+    depayloading_filter = depayloading_filter_for(track)
+
+    notification =
+      {:new_track, track_id, rid, ssrc, track.selected_encoding_key, depayloading_filter}
+
+    {pending_rtx, state} = pop_in(state.pending_rtx[{track_id, rid}])
+
+    case pending_rtx do
+      nil ->
+        {[notify: notification], state}
+
+      rtx_ssrc ->
+        rtx_info_actions = rtx_info_actions(rtx_ssrc, ssrc, track, state.extensions)
+
+        {[notify: notification] ++ rtx_info_actions, state}
+    end
+  end
+
+  defp rtx_info_actions(ssrc, original_ssrc, track, extensions) do
+    rtp_extension_mapping = Map.new(track.extmaps, &Extension.as_rtp_mapping(extensions, &1))
 
     rtx_info = %Membrane.RTP.SessionBin.RTXInfo{
       ssrc: ssrc,
@@ -972,104 +857,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       repaired_rid_id: rtp_extension_mapping[:repaired_rid]
     }
 
-    {[forward: {:rtp, rtx_info}], state}
-  end
-
-  defp handle_new_rtp_stream(ssrc, pt, rtp_header_extensions, state) do
-    track_id = Map.get(state.ssrc_to_track_id, ssrc)
-
-    track =
-      if track_id do
-        Map.get(state.inbound_tracks, track_id)
-      else
-        # search in simulcast tracks
-        simulcast_tracks =
-          state.inbound_tracks
-          |> Enum.filter(fn {inbound_track_id, _inbound_track} ->
-            inbound_track_id in state.simulcast_track_ids
-          end)
-          |> Enum.map(fn {_simulcast_track_id, simulcast_track} -> simulcast_track end)
-
-        find_track_by_mid(simulcast_tracks, state.extensions, rtp_header_extensions)
-      end
-
-    if is_nil(track) do
-      raise "Unknown track! pt: #{pt}, ssrc: #{ssrc}"
-    end
-
-    resolved_rtp_extensions =
-      SDP.resolve_rtp_header_extensions(track, rtp_header_extensions, state.extensions)
-
-    # this might be nil when track is not a simulcast one
-    rid = Map.get(resolved_rtp_extensions, :rid)
-
-    state =
-      if track.ssrc == ssrc do
-        # casual track
-        state
-      else
-        # simulcast track
-        if is_nil(rid) do
-          raise """
-          No RID extension found for RTP stream #{inspect(ssrc)}!
-          Only RID-based simulcast is supported. Ensure RID extension is enabled and supported by the WebRTC client
-          """
-        end
-
-        track = %Track{
-          track
-          | ssrc: [ssrc | track.ssrc],
-            rid_to_ssrc: Map.put(track.rid_to_ssrc, rid, ssrc)
-        }
-
-        put_in(state, [:inbound_tracks, track.id], track)
-      end
-
-    state = put_in(state, [:ssrc_to_track_id, ssrc], track.id)
-    depayloading_filter = depayloading_filter_for(track)
-
-    notification =
-      {:new_track, track.id, rid, ssrc, track.selected_encoding_key, depayloading_filter}
-
-    {pending_rtx, state} = pop_in(state.pending_rtx[{track.id, rid}])
-
-    case pending_rtx do
-      nil ->
-        {[notify: notification], state}
-
-      rtx_ssrc ->
-        rtx_info = %Membrane.RTP.SessionBin.RTXInfo{
-          ssrc: rtx_ssrc,
-          original_ssrc: ssrc,
-          original_payload_type: track.selected_encoding.payload_type,
-          rid_id: resolved_rtp_extensions[:rid],
-          repaired_rid_id: resolved_rtp_extensions[:repaired_rid]
-        }
-
-        {[notify: notification, forward: {:rtp, rtx_info}], state}
-    end
-  end
-
-  defp find_track_by_mid(tracks, webrtc_extensions, new_stream_extensions) do
-    tracks
-    |> Enum.find(tracks, fn track ->
-      resolved_rtp_extensions =
-        SDP.resolve_rtp_header_extensions(
-          track,
-          new_stream_extensions,
-          webrtc_extensions
-        )
-
-      if Map.get(resolved_rtp_extensions, :mid, <<>>) == <<>> do
-        raise """
-        No MID extension for RTP stream!
-        Such streams are not supported. It is possible that it comes from an outdated browser.
-        The browser known to send such stream is Safari in version older than 15.4
-        """
-      end
-
-      track.mid == resolved_rtp_extensions.mid
-    end)
+    [forward: {:rtp, rtx_info}]
   end
 
   defp depayloading_filter_for(track) do

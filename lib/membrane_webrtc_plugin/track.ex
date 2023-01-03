@@ -34,6 +34,7 @@ defmodule Membrane.WebRTC.Track do
   @type id :: String.t()
   @type rid :: String.t()
   @type encoding_key :: :OPUS | :H264 | :VP8
+  @type status :: :pending | :ready | :linked | :disabled
 
   @type t :: %__MODULE__{
           type: :audio | :video,
@@ -44,7 +45,7 @@ defmodule Membrane.WebRTC.Track do
           rtx_ssrc: RTP.ssrc_t() | [RTP.ssrc_t()] | nil,
           selected_encoding_key: encoding_key(),
           offered_encodings: [__MODULE__.Encoding.t()],
-          status: :pending | :ready | :linked | :disabled,
+          status: status(),
           mid: binary(),
           rids: [rid()] | nil,
           rid_to_ssrc: %{},
@@ -66,7 +67,7 @@ defmodule Membrane.WebRTC.Track do
           offered_encodings: [__MODULE__.Encoding.t()],
           mid: non_neg_integer(),
           rids: [String.t()] | nil,
-          status: :pending | :ready | :linked | :disabled,
+          status: status(),
           extmaps: [Extmap]
         ) :: t
   def new(type, stream_id, opts \\ []) do
@@ -118,6 +119,11 @@ defmodule Membrane.WebRTC.Track do
 
     tracks
   end
+
+  def simulcast?(%__MODULE__{rids: rids, ssrc: ssrcs}) when is_list(rids) and is_list(ssrcs),
+    do: true
+
+  def simulcast?(%__MODULE__{rids: nil, ssrc: ssrc}) when is_integer(ssrc), do: false
 
   @doc """
   Creates `t:t/0` from SDP m-line with random track id and stream id.
