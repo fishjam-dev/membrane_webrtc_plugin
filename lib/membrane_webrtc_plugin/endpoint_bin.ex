@@ -710,7 +710,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   defp get_offer_data(state) do
     tracks_types =
-      Map.values(state.tracks.outbound)
+      state.tracks.outbound
+      |> Map.values()
       |> Enum.filter(&(&1.status != :pending))
       |> Enum.map(& &1.type)
 

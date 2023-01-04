@@ -1,6 +1,6 @@
 defmodule Membrane.WebRTC.Track.Encoding do
   @moduledoc """
-  A struct holding a data passed via SDP about a possible encoding of a track
+  A struct holding data passed via SDP about a possible encoding of a track
   """
 
   alias ExSDP.Attribute.{FMTP, RTCPFeedback}
