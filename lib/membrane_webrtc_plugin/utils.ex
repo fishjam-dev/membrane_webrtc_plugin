@@ -1,9 +1,6 @@
 defmodule Membrane.WebRTC.Utils do
   @moduledoc false
 
-  alias Membrane.WebRTC.Track
-  alias ExSDP.Attribute.{FMTP, RTPMapping}
-
   @doc """
   Converts encoding name to its SDP string representation.
   """
