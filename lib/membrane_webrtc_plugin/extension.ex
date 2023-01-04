@@ -32,7 +32,7 @@ defmodule Membrane.WebRTC.Extension do
   @doc """
   Returns a boolean indicating whether an extension is compatible with given encoding.
   """
-  @callback compatible?(WebRTC.Track.encoding()) :: boolean()
+  @callback compatible?(WebRTC.Track.encoding_key()) :: boolean()
 
   @doc """
   Returns a module that implements the extension in `Membrane.RTP.SessionBin` or `:no_rtp_module` if such
@@ -50,7 +50,7 @@ defmodule Membrane.WebRTC.Extension do
               Media.t(),
               Extmap.extension_id(),
               Extmap.direction(),
-              [FMTP.payload_type_t()]
+              [RTP.payload_type_t()]
             ) ::
               Media.t()
 
@@ -79,7 +79,7 @@ defmodule Membrane.WebRTC.Extension do
   Given an SDP media, a list of supported extensions and supported `Extmap`s, adds corresponding
   extensions to the media.
   """
-  @spec add_to_media(Media.t(), [t()], [Extmap.t()], Extmap.direction(), [FMTP.payload_type_t()]) ::
+  @spec add_to_media(Media.t(), [t()], [Extmap.t()], Extmap.direction(), [RTP.payload_type_t()]) ::
           Media.t()
   def add_to_media(media, _extensions, [], _direction, _pt), do: media
 

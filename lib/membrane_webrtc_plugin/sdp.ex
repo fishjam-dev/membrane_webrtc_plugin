@@ -358,7 +358,10 @@ defmodule Membrane.WebRTC.SDP do
     Map.new(rtp_header_extensions, fn extension ->
       extension_name =
         Enum.find(track.extmaps, &(&1.id == extension.identifier))
-        |> then(&Extension.from_extmap(modules, &1))
+        |> case do
+          nil -> raise "Failed to find extension with id #{extension.identifier}"
+          extmap -> Extension.from_extmap(modules, extmap)
+        end
         |> then(& &1.name)
 
       {extension_name, extension.data}

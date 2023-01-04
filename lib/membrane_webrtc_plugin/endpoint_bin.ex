@@ -31,7 +31,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   @ice_restart_span_id "endpoint_bin.ice_restart"
 
   @type new_track_notification ::
-          {:new_track, Track.id(), nil | Track.Encoding.rid(), RTP.ssrc_t(), Track.encoding_key(),
+          {:new_track, Track.id(), nil | Track.rid(), RTP.ssrc_t(), Track.encoding_key(),
            depayloading_filter :: module()}
   @type signal_message ::
           {:signal, {:sdp_offer | :sdp_answer, String.t()} | {:candidate, String.t()}}
@@ -404,7 +404,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       ]
     }
 
-    state = put_in(state, [:tracks, :inbound, track_id], %{track | status: :linked})
+    state = put_in(state.tracks.inbound[track_id].status, :linked)
 
     {{:ok, spec: spec}, state}
   end
@@ -438,7 +438,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         state.extensions
       )
 
-    state = %State{state | tracks: TracksState.register_stream(state.tracks, track_info, ssrc)}
+    state = %State{state | tracks: TracksState.register_stream(state.tracks, ssrc, track_info)}
     {_cast_type, encoding_type, rid, track_id} = track_info
 
     {actions, state} =
@@ -571,8 +571,13 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
     end
 
-    # TODO: There was a merge of tracks from sdp with existing ones, check if it's needed
-    state = TracksState.add_inbound_tracks(state, new_inbound_tracks)
+    tracks_state =
+      state.tracks
+      |> TracksState.update(outbound: outbound_tracks, inbound: inbound_tracks)
+      |> TracksState.add_inbound_tracks(new_inbound_tracks)
+
+    state = %State{state | tracks: tracks_state}
+
     new_actions = new_tracks_actions(new_inbound_tracks)
 
     answer =
@@ -654,13 +659,13 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   def handle_other({:add_tracks, tracks}, _ctx, state) do
-    state = %{state | tracks: TracksState.add_outbound_tracks(state, tracks)}
+    state = %State{state | tracks: TracksState.add_outbound_tracks(state.tracks, tracks)}
 
     {action, state} =
       if state.ice.first? do
         state
         |> put_in([:ice, :first?], false)
-        |> update_in([:tracks], &TracksState.change_outbound_status(&1, :pending, :ready))
+        |> Map.update!(:tracks, &TracksState.change_outbound_status(&1, :pending, :ready))
         |> case do
           %{ice: %{pwd: nil}} = state -> {[], state}
           state -> get_offer_data(state)
@@ -695,7 +700,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         state
         |> put_in([:ice, :restarting?], true)
         |> put_in([:ice, :waiting_restart?], false)
-        |> update_in([:tracks], &TracksState.change_outbound_status(&1, :pending, :ready))
+        |> Map.update!(:tracks, &TracksState.change_outbound_status(&1, :pending, :ready))
 
       {[forward: {:ice, :restart_stream}], state}
     else
@@ -815,12 +820,13 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   defp handle_new_rtx_stream(ssrc, track_id, rid, state) do
     # simulcast RTX, we need a mapping from rid to ssrc
-    case Map.fetch(state.rid_to_ssrc, rid) do
+    track = Map.fetch!(state.tracks.inbound, track_id)
+
+    case Map.fetch(track.rid_to_ssrc, rid) do
       :error ->
         {[], put_in(state.pending_rtx[{track_id, rid}], ssrc)}
 
       original_ssrc ->
-        track = Map.fetch!(state.tracks.inbound, track_id)
         actions = rtx_info_actions(ssrc, original_ssrc, track, state.extensions)
         {actions, state}
     end

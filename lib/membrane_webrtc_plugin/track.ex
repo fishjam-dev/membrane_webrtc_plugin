@@ -120,6 +120,10 @@ defmodule Membrane.WebRTC.Track do
     tracks
   end
 
+  @doc """
+  Determines if the track is using simulcast
+  """
+  @spec simulcast?(t()) :: boolean()
   def simulcast?(%__MODULE__{rids: rids, ssrc: ssrcs}) when is_list(rids) and is_list(ssrcs),
     do: true
 

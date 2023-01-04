@@ -9,7 +9,7 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
           {:unicast, :media | :rtx, nil, Track.id()}
           | {:simulcast, :media | :rtx, Track.rid(), Track.id()}
 
-  @type t() :: %{
+  @type t() :: %__MODULE__{
           inbound: %{Track.id() => Track.t()},
           outbound: %{Track.id() => Track.t()},
           used_ssrcs: MapSet.t(RTP.ssrc_t()),
@@ -27,54 +27,67 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
     map_size(inbound) == 0 and map_size(outbound) == 0
   end
 
-  @spec add_inbound_tracks(t(), [Track.t()]) :: t()
-  def add_inbound_tracks(state, []), do: state
+  @spec update(t(), inbound: [Track.t()], outbound: [Track.t()]) :: t()
+  def update(%__MODULE__{} = state, tracks_kw) do
+    inbound =
+      tracks_kw
+      |> Access.get(:inbound, [])
+      |> Map.new(&{&1.id, &1})
 
-  def add_inbound_tracks(state, tracks) do
+    outbound =
+      tracks_kw
+      |> Access.get(:outbound, [])
+      |> Map.new(&{&1.id, &1})
+
+    %__MODULE__{
+      state
+      | inbound: Map.merge(state.inbound, inbound),
+        outbound: Map.merge(state.outbound, outbound)
+    }
+  end
+
+  @spec add_inbound_tracks(t(), [Track.t()]) :: t()
+  def add_inbound_tracks(%__MODULE__{} = state, []), do: state
+
+  def add_inbound_tracks(%__MODULE__{} = state, tracks) do
     tracks
     |> Enum.reduce(state, fn track, state ->
       state = put_in(state.inbound[track.id], track)
 
-      state =
-        if Track.simulcast?(track) do
+      cond do
+        Track.simulcast?(track) ->
           state
-        else
-          state
-          |> Map.put(:used_ssrcs, MapSet.put(state.used_ssrcs, track.ssrc))
-          |> put_in([:ssrc_to_track_id, track.ssrc], track.id)
-        end
 
-      state =
-        if Track.simulcast?(track) or is_nil(track.rtx_ssrc) do
-          state
-        else
-          state
-          |> Map.put(:used_ssrcs, MapSet.put(state.used_ssrcs, track.rtx_ssrc))
-          |> put_in([:rtx_ssrc_to_track_id, track.rtx_ssrc], track.id)
-        end
+        is_nil(track.rtx_ssrc) ->
+          register_stream(state, track.ssrc, {:unicast, :media, nil, track.id})
 
-      state
+        true ->
+          state
+          |> register_stream(track.ssrc, {:unicast, :media, nil, track.id})
+          |> register_stream(track.rtx_ssrc, {:unicast, :rtx, nil, track.id})
+      end
     end)
   end
 
   @spec add_outbound_tracks(t(), [Track.t()]) :: t()
-  def add_outbound_tracks(state, []), do: state
+  def add_outbound_tracks(%__MODULE__{} = state, []), do: state
 
-  def add_outbound_tracks(state, tracks) do
+  def add_outbound_tracks(%__MODULE__{} = state, tracks) do
     {tracks, used_ssrcs} = generate_ssrcs(tracks, state.used_ssrcs)
 
     tracks_map =
-      Map.new(tracks, fn track ->
-        {track.id, %{track | status: :pending, mid: nil}}
+      Map.new(tracks, fn
+        %{id: id} when is_map_key(state.outbound, id) ->
+          raise "Trying to add existing track #{id}"
+
+        track ->
+          {track.id, %{track | status: :pending, mid: nil}}
       end)
 
     %__MODULE__{
       state
       | used_ssrcs: used_ssrcs,
-        outbound:
-          Map.merge(state.outbound, tracks_map, fn id, _t1, _t2 ->
-            raise "Trying to add existing track #{id}"
-          end)
+        outbound: Map.merge(state.outbound, tracks_map)
     }
   end
 
@@ -92,7 +105,7 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
   end
 
   @spec change_outbound_status(t(), Track.status(), Track.status()) :: t()
-  def change_outbound_status(state, prev_status, new_status) do
+  def change_outbound_status(%__MODULE__{} = state, prev_status, new_status) do
     outbound =
       state.outbound
       |> Map.new(fn
@@ -100,11 +113,11 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
         other -> other
       end)
 
-    %__MODULE__{outbound: outbound}
+    %__MODULE__{state | outbound: outbound}
   end
 
   @spec disable_tracks(t(), [Track.t()]) :: t()
-  def disable_tracks(state, tracks_to_disable) do
+  def disable_tracks(%__MODULE__{} = state, tracks_to_disable) do
     new_outbound_tracks =
       tracks_to_disable
       |> Enum.map(&Map.get(state.outbound, &1.id))
@@ -133,9 +146,11 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
 
   # It must be simulcast then, try using mid
   def identify_inbound_stream(state, ssrc, pt, packet_extensions, webrtc_extensions) do
-    {%Track{} = track, resolved_extensions} =
-      find_track_by_mid(
-        state.inbound,
+    {track, resolved_extensions} =
+      state.inbound
+      |> Map.values()
+      |> Enum.filter(&Track.simulcast?/1)
+      |> find_track_by_mid(
         webrtc_extensions,
         packet_extensions
       )
@@ -188,39 +203,40 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
   end
 
   @spec register_stream(t(), RTP.ssrc_t(), stream_info()) :: t()
-  def register_stream(state, ssrc, info) do
+  def register_stream(%__MODULE__{} = state, ssrc, info) do
     state
-    |> Map.put(:used_ssrcs, MapSet.put(state.used_ssrcs, ssrc))
+    |> Map.replace!(:used_ssrcs, MapSet.put(state.used_ssrcs, ssrc))
     |> do_register_stream(ssrc, info)
   end
 
   defp do_register_stream(state, ssrc, {:unicast, :media, nil, track_id}) do
-    put_in(state, [:ssrc_to_track_id, ssrc], track_id)
+    put_in(state.ssrc_to_track_id[ssrc], track_id)
   end
 
   defp do_register_stream(state, ssrc, {:unicast, :rtx, nil, track_id}) do
-    state
-    |> put_in([:inbound, track_id, :rtx_ssrc], ssrc)
-    |> put_in([:rtx_ssrc_to_track_id, ssrc], track_id)
+    state = put_in(state.inbound[track_id].rtx_ssrc, ssrc)
+    put_in(state.rtx_ssrc_to_track_id[ssrc], track_id)
   end
 
   defp do_register_stream(state, ssrc, {:simulcast, :media, rid, track_id}) do
-    state
-    |> update_in([:inbound, track_id], fn track ->
-      %Track{
-        track
-        | ssrc: [ssrc | track.ssrc],
-          rid_to_ssrc: Map.put(track.rid_to_ssrc, rid, ssrc)
-      }
-    end)
-    |> put_in([:ssrc_to_track_id, ssrc], track_id)
+    state =
+      update_in(state.inbound[track_id], fn track ->
+        %Track{
+          track
+          | ssrc: [ssrc | track.ssrc],
+            rid_to_ssrc: Map.put(track.rid_to_ssrc, rid, ssrc)
+        }
+      end)
+
+    put_in(state.ssrc_to_track_id[ssrc], track_id)
   end
 
   defp do_register_stream(state, ssrc, {:simulcast, :rtx, _rid, track_id}) do
-    state
-    |> update_in([:inbound, track_id], fn track ->
-      %Track{track | rtx_ssrc: [ssrc | track.rtx_ssrc]}
-    end)
-    |> put_in([:rtx_ssrc_to_track_id, ssrc], track_id)
+    state =
+      update_in(state.inbound[track_id], fn track ->
+        %Track{track | rtx_ssrc: [ssrc | track.rtx_ssrc]}
+      end)
+
+    put_in(state.rtx_ssrc_to_track_id[ssrc], track_id)
   end
 end
