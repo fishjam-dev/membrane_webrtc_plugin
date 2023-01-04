@@ -8,57 +8,13 @@ defmodule Membrane.WebRTC.EndpointBinTest do
   @directions [:sendonly, :recvonly, :sendrecv]
 
   Enum.map(@directions, fn direction ->
-    test "creating #{inspect(direction)} EndpointBin with empty inbound and outbound tracks passes" do
+    test "creating #{inspect(direction)} EndpointBin" do
       children = [
         endpoint: %EndpointBin{direction: unquote(direction)}
       ]
 
       {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
       Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
-    end
-  end)
-
-  test "creating sendonly EndpointBin with inbound tracks raises an error" do
-    track = Utils.get_track()
-    options = %EndpointBin{direction: :sendonly, inbound_tracks: [track]}
-
-    assert_raise RuntimeError,
-                 ~r/Cannot add inbound tracks when EndpointBin is set to :sendonly./,
-                 fn -> EndpointBin.handle_init(options) end
-  end
-
-  test "creating recvonly EndpointBin with outbound tracks raises an error" do
-    track = Utils.get_track()
-    options = %EndpointBin{direction: :recvonly, outbound_tracks: [track]}
-
-    assert_raise RuntimeError,
-                 ~r/Cannot add outbound tracks when EndpointBin is set to :recvonly./,
-                 fn -> EndpointBin.handle_init(options) end
-  end
-
-  Enum.map([:recvonly, :sendrecv], fn direction ->
-    test "creatinig #{inspect(direction)} EndpointBin with inbound tracks passes" do
-      track = Utils.get_track()
-
-      children = [
-        endpoint: %EndpointBin{direction: unquote(direction), inbound_tracks: [track]}
-      ]
-
-      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
-      :ok = Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
-    end
-  end)
-
-  Enum.map([:sendonly, :sendrecv], fn direction ->
-    test "creatinig #{inspect(direction)} EndpointBin with outbound tracks passes" do
-      track = Utils.get_track()
-
-      children = [
-        endpoint: %EndpointBin{direction: unquote(direction), outbound_tracks: [track]}
-      ]
-
-      {:ok, pid} = Membrane.Testing.Pipeline.start_link(children: children)
-      :ok = Membrane.Testing.Pipeline.terminate(pid, blocking?: true)
     end
   end)
 
@@ -93,11 +49,10 @@ defmodule Membrane.WebRTC.EndpointBinTest do
   end)
 
   test "EndpointBin raises when peer offers outbound tracks on its own" do
-    track = Utils.get_track()
     offer = File.read!("test/fixtures/2_outgoing_tracks_sdp.txt")
     sdp_offer_msg = {:signal, {:sdp_offer, offer, %{}}}
     handshake_init_data_not = {:handshake_init_data, 1, <<>>}
-    options = %EndpointBin{direction: :sendrecv, outbound_tracks: [track]}
+    options = %EndpointBin{direction: :sendrecv}
 
     {{:ok, _spec}, state} = EndpointBin.handle_init(options)
     {:ok, state} = EndpointBin.handle_notification(handshake_init_data_not, nil, nil, state)
