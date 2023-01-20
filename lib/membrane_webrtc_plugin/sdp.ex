@@ -4,7 +4,7 @@ defmodule Membrane.WebRTC.SDP do
 
   alias ExSDP.Attribute.{FMTP, Group, MSID, RTCPFeedback, RTPMapping, SSRC}
   alias ExSDP.{ConnectionData, Media}
-  alias Membrane.WebRTC.{Extension, Track, Utils}
+  alias Membrane.WebRTC.{Extension, Track}
 
   @type fingerprint :: {ExSDP.Attribute.hash_function(), binary()}
 
@@ -327,11 +327,9 @@ defmodule Membrane.WebRTC.SDP do
       raise "Unknown encoding of outbound track, cannot pick params from SDP"
     end
 
-    encoding_name_to_find = Utils.encoding_name_to_string(track.selected_encoding_key)
-
     selected_encoding =
       Enum.find(sdp_track.offered_encodings, fn %Track.Encoding{name: name} ->
-        name == encoding_name_to_find
+        name == track.selected_encoding.name
       end)
 
     if selected_encoding == nil do

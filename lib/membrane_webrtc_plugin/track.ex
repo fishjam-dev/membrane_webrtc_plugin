@@ -98,29 +98,6 @@ defmodule Membrane.WebRTC.Track do
   def stream_id(), do: UUID.uuid4()
 
   @doc """
-  Given a list of new tracks and a list of already added tracks,
-  adds ssrcs to the new tracks.
-  """
-  @spec add_ssrc(t | [t], [t]) :: [t]
-  def add_ssrc(tracks, present_tracks) do
-    restricted_ssrcs = MapSet.new(present_tracks, & &1.ssrc)
-
-    {tracks, _restricted_ssrcs} =
-      tracks
-      |> Bunch.listify()
-      |> Enum.map_reduce(restricted_ssrcs, fn track, restricted_ssrcs ->
-        ssrc =
-          fn -> :crypto.strong_rand_bytes(4) |> :binary.decode_unsigned() end
-          |> Stream.repeatedly()
-          |> Enum.find(&(&1 not in restricted_ssrcs))
-
-        {%__MODULE__{track | ssrc: ssrc}, MapSet.put(restricted_ssrcs, ssrc)}
-      end)
-
-    tracks
-  end
-
-  @doc """
   Determines if the track is using simulcast
   """
   @spec simulcast?(t()) :: boolean()

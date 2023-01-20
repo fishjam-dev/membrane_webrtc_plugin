@@ -429,7 +429,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         _ctx,
         %State{} = state
       ) do
-    track_info =
+    stream_info =
       TracksState.identify_inbound_stream(
         state.tracks,
         ssrc,
@@ -438,8 +438,8 @@ defmodule Membrane.WebRTC.EndpointBin do
         state.extensions
       )
 
-    state = %State{state | tracks: TracksState.register_stream(state.tracks, ssrc, track_info)}
-    {_cast_type, encoding_type, rid, track_id} = track_info
+    state = %State{state | tracks: TracksState.register_stream(state.tracks, ssrc, stream_info)}
+    {_cast_type, encoding_type, rid, track_id} = stream_info
 
     {actions, state} =
       case encoding_type do
@@ -825,6 +825,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     case Map.fetch(track.rid_to_ssrc, rid) do
       :error ->
+        # Since we don't know the original_ssrc yet, we must wait for it and out the new ssrc in pending_rtx map
         {[], put_in(state.pending_rtx[{track_id, rid}], ssrc)}
 
       original_ssrc ->
