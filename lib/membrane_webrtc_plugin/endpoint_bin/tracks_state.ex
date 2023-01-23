@@ -120,7 +120,7 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
   def disable_tracks(%__MODULE__{} = state, tracks_to_disable) do
     new_outbound_tracks =
       tracks_to_disable
-      |> Enum.map(&Map.get(state.outbound, &1.id))
+      |> Enum.map(&Map.fetch!(state.outbound, &1.id))
       |> Map.new(fn track -> {track.id, %{track | status: :disabled}} end)
 
     %__MODULE__{state | outbound: Map.merge(state.outbound, new_outbound_tracks)}
@@ -156,7 +156,7 @@ defmodule Membrane.WebRTC.EndpointBin.TracksState do
       )
 
     if is_nil(track) do
-      raise "Unknown track! pt: #{pt}, ssrc: #{ssrc}"
+      raise "Unknown inbound RTP stream, pt: #{pt}, ssrc: #{ssrc}"
     end
 
     {type, rid} =

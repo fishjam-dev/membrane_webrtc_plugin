@@ -1,6 +1,6 @@
 defmodule Membrane.WebRTC.Extension.RepairedRid do
   @moduledoc """
-  Module implementing `Membrane.WebRTC.Extension` behaviour for Repair RTP Stream Identifier RTP Header extension.
+  Module implementing `Membrane.WebRTC.Extension` behaviour for Repaired RTP Stream Identifier RTP Header extension.
 
   This extension is described in RFC 8852.
   """
@@ -20,9 +20,6 @@ defmodule Membrane.WebRTC.Extension.RepairedRid do
   @impl true
   def compatible?(_encoding), do: true
 
-  # there is no module parsing RTP headers against this extension as
-  # for the whole session mid for same buffer will be the same.
-  # It is used only in handler for `:new_rtp_stream` notification.
   @impl true
   def get_rtp_module(_rid_id, _opts, _track_type), do: :no_rtp_module
 

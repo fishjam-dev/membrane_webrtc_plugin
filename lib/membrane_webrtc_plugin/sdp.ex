@@ -327,6 +327,7 @@ defmodule Membrane.WebRTC.SDP do
       raise "Unknown encoding of outbound track, cannot pick params from SDP"
     end
 
+    # `:selected_encoding` is empty, we will be using a key to find one by name
     encoding_name_to_find = Utils.encoding_name_to_string(track.selected_encoding_key)
 
     selected_encoding =

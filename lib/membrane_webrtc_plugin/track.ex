@@ -98,29 +98,6 @@ defmodule Membrane.WebRTC.Track do
   def stream_id(), do: UUID.uuid4()
 
   @doc """
-  Given a list of new tracks and a list of already added tracks,
-  adds ssrcs to the new tracks.
-  """
-  @spec add_ssrc(t | [t], [t]) :: [t]
-  def add_ssrc(tracks, present_tracks) do
-    restricted_ssrcs = MapSet.new(present_tracks, & &1.ssrc)
-
-    {tracks, _restricted_ssrcs} =
-      tracks
-      |> Bunch.listify()
-      |> Enum.map_reduce(restricted_ssrcs, fn track, restricted_ssrcs ->
-        ssrc =
-          fn -> :crypto.strong_rand_bytes(4) |> :binary.decode_unsigned() end
-          |> Stream.repeatedly()
-          |> Enum.find(&(&1 not in restricted_ssrcs))
-
-        {%__MODULE__{track | ssrc: ssrc}, MapSet.put(restricted_ssrcs, ssrc)}
-      end)
-
-    tracks
-  end
-
-  @doc """
   Determines if the track is using simulcast
   """
   @spec simulcast?(t()) :: boolean()
@@ -312,7 +289,7 @@ defmodule Membrane.WebRTC.Track do
         _other -> :codec
       end)
 
-    fmtps_by_pt =
+    fmtp_by_pt =
       sdp_media
       |> Media.get_attributes(:fmtp)
       |> Map.new(&{&1.pt, &1})
@@ -321,7 +298,7 @@ defmodule Membrane.WebRTC.Track do
       grouped_rtpmaps
       |> Map.get(:rtx, [])
       |> Map.new(fn %RTPMapping{payload_type: pt} ->
-        fmtp = fmtps_by_pt |> Map.fetch!(pt)
+        fmtp = fmtp_by_pt |> Map.fetch!(pt)
         {fmtp.apt, fmtp}
       end)
 
@@ -329,7 +306,7 @@ defmodule Membrane.WebRTC.Track do
       grouped_rtpmaps
       |> Map.get(:red, [])
       |> Enum.flat_map(fn %RTPMapping{payload_type: pt} ->
-        case fmtps_by_pt |> Map.fetch(pt) do
+        case fmtp_by_pt |> Map.fetch(pt) do
           {:ok, %FMTP{redundant_payloads: apts}} -> apts |> Enum.map(&{&1, pt})
           # Chrome seems to offer an invalid "red" stream for video without FMTP ¯\_(ツ)_/¯
           :error -> []
@@ -340,11 +317,11 @@ defmodule Membrane.WebRTC.Track do
     grouped_rtpmaps
     |> Map.get(:codec, [])
     |> Enum.map(fn %RTPMapping{payload_type: pt} = rtpmap ->
-      fmtps = fmtps_by_pt[pt]
+      fmtp = fmtp_by_pt[pt]
       rtx_fmtp = rtx_fmtp_by_apt[pt]
       red_payload_type = red_pt_by_apt[pt]
 
-      {rtpmap, fmtps, rtx_fmtp, red_payload_type}
+      {rtpmap, fmtp, rtx_fmtp, red_payload_type}
     end)
   end
 
