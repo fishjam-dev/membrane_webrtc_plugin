@@ -289,7 +289,7 @@ defmodule Membrane.WebRTC.Track do
         _other -> :codec
       end)
 
-    fmtps_by_pt =
+    fmtp_by_pt =
       sdp_media
       |> Media.get_attributes(:fmtp)
       |> Map.new(&{&1.pt, &1})
@@ -298,7 +298,7 @@ defmodule Membrane.WebRTC.Track do
       grouped_rtpmaps
       |> Map.get(:rtx, [])
       |> Map.new(fn %RTPMapping{payload_type: pt} ->
-        fmtp = fmtps_by_pt |> Map.fetch!(pt)
+        fmtp = fmtp_by_pt |> Map.fetch!(pt)
         {fmtp.apt, fmtp}
       end)
 
@@ -306,7 +306,7 @@ defmodule Membrane.WebRTC.Track do
       grouped_rtpmaps
       |> Map.get(:red, [])
       |> Enum.flat_map(fn %RTPMapping{payload_type: pt} ->
-        case fmtps_by_pt |> Map.fetch(pt) do
+        case fmtp_by_pt |> Map.fetch(pt) do
           {:ok, %FMTP{redundant_payloads: apts}} -> apts |> Enum.map(&{&1, pt})
           # Chrome seems to offer an invalid "red" stream for video without FMTP ¯\_(ツ)_/¯
           :error -> []
@@ -317,11 +317,11 @@ defmodule Membrane.WebRTC.Track do
     grouped_rtpmaps
     |> Map.get(:codec, [])
     |> Enum.map(fn %RTPMapping{payload_type: pt} = rtpmap ->
-      fmtps = fmtps_by_pt[pt]
+      fmtp = fmtp_by_pt[pt]
       rtx_fmtp = rtx_fmtp_by_apt[pt]
       red_payload_type = red_pt_by_apt[pt]
 
-      {rtpmap, fmtps, rtx_fmtp, red_payload_type}
+      {rtpmap, fmtp, rtx_fmtp, red_payload_type}
     end)
   end
 
