@@ -2,7 +2,7 @@
 
 [![Hex.pm](https://img.shields.io/hexpm/v/membrane_webrtc_plugin.svg)](https://hex.pm/packages/membrane_webrtc_plugin)
 [![API Docs](https://img.shields.io/badge/api-docs-yellow.svg?style=flat)](https://hexdocs.pm/membrane_webrtc_plugin)
-[![CircleCI](https://circleci.com/gh/membraneframework/membrane_webrtc_plugin.svg?style=svg)](https://circleci.com/gh/membraneframework/membrane_webrtc_plugin)
+[![CircleCI](https://circleci.com/gh/jellyfish-dev/membrane_webrtc_plugin.svg?style=svg)](https://circleci.com/gh/jellyfish-dev/membrane_webrtc_plugin)
 
 Plugin for sending and receiving media with WebRTC.
 
@@ -15,7 +15,7 @@ The package can be installed by adding `membrane_webrtc_plugin` to your list of 
 ```elixir
 def deps do
   [
-    {:membrane_webrtc_plugin, "~> 0.10.0"}
+    {:membrane_webrtc_plugin, "~> 0.11.0"}
   ]
 end
 ```

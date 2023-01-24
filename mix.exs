@@ -1,8 +1,8 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.10.0"
-  @github_url "https://github.com/membraneframework/membrane_webrtc_plugin"
+  @version "0.11.0"
+  @github_url "https://github.com/jellyfish-dev/membrane_webrtc_plugin"
 
   def project do
     [
@@ -21,7 +21,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       # docs
       name: "Membrane WebRTC plugin",
       source_url: @github_url,
-      homepage_url: "https://membraneframework.org",
+      homepage_url: "https://membrane.stream",
       docs: docs(),
       releases: [
         otel_getting_started: [
@@ -44,22 +44,20 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
   defp deps do
     [
       {:membrane_opentelemetry, "~> 0.1.0"},
-      {:membrane_core, "~> 0.10.0"},
+      {:membrane_core, "~> 0.11.2"},
       {:qex, "~> 0.5.0"},
-      {:bunch, "~> 1.3.0"},
+      {:bunch, "~> 1.3"},
       {:ex_sdp, "~> 0.9.0"},
       {:membrane_rtp_plugin,
-       github: "membraneframework/membrane_rtp_plugin",
-       branch: "MV-100-handle-rtx-rtp-plugin",
-       override: true},
-      {:membrane_rtp_format, "~> 0.5.0"},
-      {:membrane_ice_plugin, "~> 0.13.0"},
-      {:membrane_funnel_plugin, "~> 0.6.0"},
-      {:membrane_h264_ffmpeg_plugin, "~> 0.21.0"},
-      {:membrane_rtp_vp8_plugin, "~> 0.6.0"},
-      {:membrane_rtp_h264_plugin, "~> 0.13.0"},
-      {:membrane_rtp_opus_plugin, "~> 0.6.0"},
-      {:ex_libsrtp, "~> 0.6.0"},
+       github: "membraneframework/membrane_rtp_plugin", branch: "merge-core-v0.11", override: true},
+      {:membrane_rtp_format, "~> 0.6.0"},
+      {:membrane_ice_plugin, "~> 0.14.0"},
+      {:membrane_funnel_plugin, "~> 0.7.0"},
+      {:membrane_h264_ffmpeg_plugin, "~> 0.25.0"},
+      {:membrane_rtp_vp8_plugin, "~> 0.7.0"},
+      {:membrane_rtp_h264_plugin, "~> 0.14.0"},
+      {:membrane_rtp_opus_plugin, "~> 0.7.0"},
+      {:ex_libsrtp, ">= 0.0.0"},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
       {:credo, "~> 1.6", only: :dev, runtime: false},
@@ -89,7 +87,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => @github_url,
-        "Membrane Framework Homepage" => "https://membraneframework.org"
+        "Membrane Framework Homepage" => "https://membrane.stream"
       }
     ]
   end
