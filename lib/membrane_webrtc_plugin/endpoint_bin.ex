@@ -826,7 +826,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         # Since we don't know the original_ssrc yet, we must wait for it and out the new ssrc in pending_rtx map
         {[], put_in(state.pending_rtx[{track_id, rid}], ssrc)}
 
-      original_ssrc ->
+      {:ok, original_ssrc} ->
         actions = rtx_info_actions(ssrc, original_ssrc, track, state.extensions)
         {actions, state}
     end
