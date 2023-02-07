@@ -747,6 +747,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   defp new_tracks_actions(new_tracks) do
     notify = [notify_parent: {:new_tracks, new_tracks}]
 
+    ignored_ssrcs =
+      new_tracks
+      |> Enum.filter(&(not Track.simulcast?(&1)))
+      |> Enum.map(& &1.ssrc)
+
     require_extensions =
       new_tracks
       |> Enum.filter(&Track.simulcast?/1)
@@ -778,7 +783,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> then(
         &[
           notify_child:
-            {:rtp, %Membrane.RTP.SSRCRouter.RequireExtensions{pt_to_ext_id: Map.new(&1)}}
+            {:rtp,
+             %Membrane.RTP.SSRCRouter.RequireExtensions{
+               pt_to_ext_id: Map.new(&1),
+               ignored_ssrcs: ignored_ssrcs
+             }}
         ]
       )
 
