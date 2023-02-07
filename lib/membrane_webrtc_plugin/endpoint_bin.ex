@@ -281,7 +281,9 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> get_child(:ice_funnel),
       get_child(:ice)
       |> via_out(Pad.ref(:output, 1))
-      |> via_in(Pad.ref(:rtp_input, rtp_input_ref))
+      |> via_in(Pad.ref(:rtp_input, rtp_input_ref),
+        options: [telemetry_label: opts.telemetry_label]
+      )
       |> get_child(:rtp),
       get_child(:ice_funnel)
       |> via_out(:output)
@@ -360,6 +362,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     rtp_extensions = to_rtp_extensions(extmaps, :outbound, state)
+    telemetry_label = state.telemetry_label ++ [track_id: "#{track_id}"]
 
     spec = [
       get_child(:rtp)
@@ -368,7 +371,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       bin_input(pad)
       |> then(encoding_specific_links)
       |> via_in(Pad.ref(:input, ssrc),
-        options: [payloader: payloader, rtp_extensions: rtp_extensions]
+        options: [
+          payloader: payloader,
+          rtp_extensions: rtp_extensions,
+          telemetry_label: telemetry_label
+        ]
       )
       |> get_child(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
