@@ -362,7 +362,6 @@ defmodule Membrane.WebRTC.EndpointBin do
       end
 
     rtp_extensions = to_rtp_extensions(extmaps, :outbound, state)
-    telemetry_label = state.telemetry_label ++ [track_id: "#{track_id}"]
 
     spec = [
       get_child(:rtp)
@@ -374,7 +373,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         options: [
           payloader: payloader,
           rtp_extensions: rtp_extensions,
-          telemetry_label: telemetry_label
+          telemetry_label: state.telemetry_label ++ [:outbound_tracks, track_id: "#{track_id}"]
         ]
       )
       |> get_child(:rtp)
