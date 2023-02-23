@@ -2,7 +2,7 @@ defmodule Membrane.WebRTC.SDP do
   @moduledoc false
   require Membrane.Logger
 
-  alias ExSDP.Attribute.{FMTP, Group, MSID, RTPMapping, SSRC}
+  alias ExSDP.Attribute.{FMTP, Group, MSID, RTCPFeedback, RTPMapping, SSRC}
   alias ExSDP.{ConnectionData, Media}
   alias Membrane.WebRTC.{Extension, Track, Utils}
 
@@ -50,7 +50,7 @@ defmodule Membrane.WebRTC.SDP do
     }
 
     attributes =
-      [%Group{semantics: "BUNDLE", mids: mids}] ++
+      [%Group{semantics: "BUNDLE", mids: mids}, "extmap-allow-mixed"] ++
         if Keyword.get(opts, :ice_lite?), do: [:ice_lite], else: []
 
     %ExSDP{ExSDP.new() | timing: %ExSDP.Timing{start_time: 0, stop_time: 0}}
@@ -79,11 +79,46 @@ defmodule Membrane.WebRTC.SDP do
     ExSDP.add_media(sdp, media)
   end
 
-  defp create_sdp_media(track, direction, config) do
-    payload_type = [track.rtp_mapping.payload_type]
+  defp create_sdp_media(
+         %Track{selected_encoding: %Track.Encoding{} = encoding} = track,
+         direction,
+         config
+       ) do
+    payload_types =
+      if is_nil(encoding.rtx) do
+        [encoding.payload_type]
+      else
+        [encoding.payload_type, encoding.rtx.payload_type]
+      end
+
+    rtp_mapping = %RTPMapping{
+      payload_type: encoding.payload_type,
+      encoding: encoding.name,
+      clock_rate: encoding.clock_rate,
+      params: encoding.audio_channels
+    }
+
+    rtx_attributes =
+      if is_nil(encoding.rtx) do
+        []
+      else
+        [
+          %RTPMapping{
+            payload_type: encoding.rtx.payload_type,
+            encoding: "rtx",
+            clock_rate: encoding.clock_rate,
+            params: encoding.audio_channels
+          },
+          %FMTP{
+            pt: encoding.rtx.payload_type,
+            apt: encoding.payload_type,
+            rtx_time: encoding.rtx.rtx_time
+          }
+        ]
+      end
 
     %Media{
-      Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_type)
+      Media.new(track.type, 9, "UDP/TLS/RTP/SAVPF", payload_types)
       | connection_data: [%ConnectionData{address: {0, 0, 0, 0}}]
     }
     |> Media.add_attributes([
@@ -99,12 +134,13 @@ defmodule Membrane.WebRTC.SDP do
       :rtcp_mux
     ])
     |> Media.add_attributes(
-      if(track.fmtp == nil,
-        do: [track.rtp_mapping],
-        else: [track.rtp_mapping, track.fmtp]
+      if(encoding.format_params == nil,
+        do: [rtp_mapping],
+        else: [rtp_mapping, encoding.format_params]
       )
     )
-    |> add_extensions(config.extensions, track, direction, payload_type)
+    |> Media.add_attributes(rtx_attributes)
+    |> add_extensions(config.extensions, track.type, track.extmaps, direction, encoding)
     |> then(fn media ->
       if is_list(track.rids) and direction == :recvonly do
         # if this is an incoming simulcast track add RIDs else add SSRC
@@ -115,14 +151,23 @@ defmodule Membrane.WebRTC.SDP do
     end)
   end
 
-  defp add_extensions(media, extensions, %Track{type: :audio} = track, direction, pt),
-    do: Extension.add_to_media(media, extensions, track.extmaps, direction, pt)
+  defp add_extensions(media, extensions, :audio, extmaps, direction, encoding),
+    do: Extension.add_to_media(media, extensions, extmaps, direction, [encoding.payload_type])
 
-  defp add_extensions(media, extensions, %Track{type: :video} = track, direction, pt) do
+  defp add_extensions(media, extensions, :video, extmaps, direction, encoding) do
+    pt = encoding.payload_type
+
+    feedbacks =
+      for fb_type <- [:fir, :nack, :pli] do
+        # feedbacks suported by us
+        %RTCPFeedback{pt: pt, feedback_type: fb_type}
+      end
+      # pick supported by "them"
+      |> Enum.filter(&(&1 in encoding.rtcp_feedback))
+
     media
-    |> Extension.add_to_media(extensions, track.extmaps, direction, pt)
-    |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} ccm fir"))
-    |> Media.add_attributes(Enum.map(pt, &"rtcp-fb:#{&1} nack pli"))
+    |> Extension.add_to_media(extensions, extmaps, direction, [pt])
+    |> Media.add_attributes(feedbacks)
     |> Media.add_attribute(:rtcp_rsize)
   end
 
@@ -153,14 +198,12 @@ defmodule Membrane.WebRTC.SDP do
   @doc """
   Default value for filter_codecs option in `Membrane.WebRTC.EndpointBin`.
   """
-  @spec filter_mappings({RTPMapping, FMTP}) :: boolean()
-  def filter_mappings(rtp_fmtp_pair) do
-    {rtp, fmtp} = rtp_fmtp_pair
-
-    case rtp.encoding do
-      "opus" -> true
-      "VP8" -> true
-      "H264" -> fmtp.profile_level_id === 0x42E01F
+  @spec filter_encodings(Track.Encoding.t()) :: boolean()
+  def filter_encodings(%Track.Encoding{} = encoding) do
+    case encoding do
+      %{name: "opus"} -> true
+      %{name: "VP8"} -> true
+      %{name: "H264", format_parms: fmtp} -> fmtp.profile_level_id === 0x42E01F
       _unsupported_codec -> false
     end
   end
@@ -242,7 +285,7 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   defp get_new_tracks(tracks, old_tracks) do
-    old_track_ids = Enum.map(old_tracks, & &1.id)
+    old_track_ids = MapSet.new(old_tracks, & &1.id)
     Enum.filter(tracks, &(&1.id not in old_track_ids))
   end
 
@@ -280,26 +323,27 @@ defmodule Membrane.WebRTC.SDP do
   end
 
   defp update_outbound_track(track, sdp_track) do
-    encoding_string = Utils.encoding_name_to_string(track.encoding)
+    if is_nil(track.selected_encoding_key) do
+      raise "Unknown encoding of outbound track, cannot pick params from SDP"
+    end
 
-    rtp_fmtp_pairs = Utils.pair_rtp_mappings_with_fmtp(sdp_track)
+    # `:selected_encoding` is empty, we will be using a key to find one by name
+    encoding_name_to_find = Utils.encoding_name_to_string(track.selected_encoding_key)
 
-    selected_rtp_fmtp_pair =
-      Enum.find(rtp_fmtp_pairs, fn {rtp, _fmtp} ->
-        rtp.encoding == encoding_string
+    selected_encoding =
+      Enum.find(sdp_track.offered_encodings, fn %Track.Encoding{name: name} ->
+        name == encoding_name_to_find
       end)
 
-    if selected_rtp_fmtp_pair == nil do
+    if selected_encoding == nil do
       %{track | mid: sdp_track.mid, status: :disabled}
     else
-      {rtp, fmtp} = selected_rtp_fmtp_pair
-
       extmaps =
         Enum.filter(sdp_track.extmaps, fn extmap ->
           Enum.any?(track.extmaps, &(&1.uri == extmap.uri))
         end)
 
-      %Track{track | mid: sdp_track.mid, rtp_mapping: rtp, fmtp: fmtp, extmaps: extmaps}
+      %Track{track | mid: sdp_track.mid, selected_encoding: selected_encoding, extmaps: extmaps}
     end
   end
 
@@ -315,7 +359,10 @@ defmodule Membrane.WebRTC.SDP do
     Map.new(rtp_header_extensions, fn extension ->
       extension_name =
         Enum.find(track.extmaps, &(&1.id == extension.identifier))
-        |> then(&Extension.from_extmap(modules, &1))
+        |> case do
+          nil -> raise "Failed to find extension with id #{extension.identifier}"
+          extmap -> Extension.from_extmap(modules, extmap)
+        end
         |> then(& &1.name)
 
       {extension_name, extension.data}

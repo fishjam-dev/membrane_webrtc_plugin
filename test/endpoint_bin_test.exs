@@ -4,64 +4,19 @@ defmodule Membrane.WebRTC.EndpointBinTest do
   import Membrane.ChildrenSpec
 
   alias Membrane.WebRTC.EndpointBin
+  alias Membrane.WebRTC.Extension.{Mid, Rid}
   alias Membrane.WebRTC.Test.Utils
 
   @directions [:sendonly, :recvonly, :sendrecv]
 
   Enum.map(@directions, fn direction ->
-    test "creating #{inspect(direction)} EndpointBin with empty inbound and outbound tracks passes" do
+    test "creating #{inspect(direction)} EndpointBin" do
       pipeline =
         Membrane.Testing.Pipeline.start_link_supervised!(
           structure: child(:endpoint, %EndpointBin{direction: unquote(direction)})
         )
 
       Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
-    end
-  end)
-
-  test "creating sendonly EndpointBin with inbound tracks raises an error" do
-    track = Utils.get_track()
-    options = %EndpointBin{direction: :sendonly, inbound_tracks: [track]}
-
-    assert_raise RuntimeError,
-                 ~r/Cannot add inbound tracks when EndpointBin is set to :sendonly./,
-                 fn -> EndpointBin.handle_init(nil, options) end
-  end
-
-  test "creating recvonly EndpointBin with outbound tracks raises an error" do
-    track = Utils.get_track()
-    options = %EndpointBin{direction: :recvonly, outbound_tracks: [track]}
-
-    assert_raise RuntimeError,
-                 ~r/Cannot add outbound tracks when EndpointBin is set to :recvonly./,
-                 fn -> EndpointBin.handle_init(nil, options) end
-  end
-
-  Enum.map([:recvonly, :sendrecv], fn direction ->
-    test "creatinig #{inspect(direction)} EndpointBin with inbound tracks passes" do
-      track = Utils.get_track()
-
-      pipeline =
-        Membrane.Testing.Pipeline.start_link_supervised!(
-          structure:
-            child(:endpoint, %EndpointBin{direction: unquote(direction), inbound_tracks: [track]})
-        )
-
-      :ok = Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
-    end
-  end)
-
-  Enum.map([:sendonly, :sendrecv], fn direction ->
-    test "creatinig #{inspect(direction)} EndpointBin with outbound tracks passes" do
-      track = Utils.get_track()
-
-      pipeline =
-        Membrane.Testing.Pipeline.start_link_supervised!(
-          structure:
-            child(:endpoint, %EndpointBin{direction: unquote(direction), outbound_tracks: [track]})
-        )
-
-      :ok = Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
     end
   end)
 
@@ -95,11 +50,10 @@ defmodule Membrane.WebRTC.EndpointBinTest do
   end)
 
   test "EndpointBin raises when peer offers outbound tracks on its own" do
-    track = Utils.get_track()
     offer = File.read!("test/fixtures/2_outgoing_tracks_sdp.txt")
     sdp_offer_msg = {:signal, {:sdp_offer, offer, %{}}}
     handshake_init_data_not = {:handshake_init_data, 1, <<>>}
-    options = %EndpointBin{direction: :sendrecv, outbound_tracks: [track]}
+    options = %EndpointBin{direction: :sendrecv}
 
     {_spec, state} = EndpointBin.handle_init(nil, options)
     {[], state} = EndpointBin.handle_child_notification(handshake_init_data_not, nil, nil, state)
@@ -141,7 +95,7 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     sdp_offer_msg = {:signal, {:sdp_offer, offer, mid_to_track_id}}
     handshake_init_data_not = {:handshake_init_data, 1, fingerprint}
 
-    options = %EndpointBin{direction: endpoint_bin_direction}
+    options = %EndpointBin{direction: endpoint_bin_direction, extensions: [Mid, Rid]}
     {_spec, state} = EndpointBin.handle_init(nil, options)
     {[], state} = EndpointBin.handle_child_notification(handshake_init_data_not, nil, nil, state)
     {actions, _state} = EndpointBin.handle_parent_notification(sdp_offer_msg, nil, state)
