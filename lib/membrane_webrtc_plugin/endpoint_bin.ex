@@ -281,9 +281,7 @@ defmodule Membrane.WebRTC.EndpointBin do
       |> get_child(:ice_funnel),
       get_child(:ice)
       |> via_out(Pad.ref(:output, 1))
-      |> via_in(Pad.ref(:rtp_input, rtp_input_ref),
-        options: [telemetry_label: opts.telemetry_label]
-      )
+      |> via_in(Pad.ref(:rtp_input, rtp_input_ref))
       |> get_child(:rtp),
       get_child(:ice_funnel)
       |> via_out(:output)
