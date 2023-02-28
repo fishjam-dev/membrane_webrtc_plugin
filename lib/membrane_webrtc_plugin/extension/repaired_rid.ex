@@ -1,6 +1,6 @@
-defmodule Membrane.WebRTC.Extension.Rid do
+defmodule Membrane.WebRTC.Extension.RepairedRid do
   @moduledoc """
-  Module implementing `Membrane.WebRTC.Extension` behaviour for RTP Stream Identifier RTP Header extension.
+  Module implementing `Membrane.WebRTC.Extension` behaviour for Repaired RTP Stream Identifier RTP Header extension.
 
   This extension is described in RFC 8852.
   """
@@ -10,8 +10,8 @@ defmodule Membrane.WebRTC.Extension.Rid do
   alias ExSDP.Media
   alias Membrane.WebRTC.Extension
 
-  @name :rid
-  @uri "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id"
+  @name :repaired_rid
+  @uri "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
 
   @impl true
   def new(opts \\ Keyword.new()),

@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.11.0"
+  @version "0.12.0"
   @github_url "https://github.com/jellyfish-dev/membrane_webrtc_plugin"
 
   def project do
@@ -46,15 +46,14 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_opentelemetry, "~> 0.1.0"},
       {:membrane_core, "~> 0.11.2"},
       {:qex, "~> 0.5.0"},
-      {:bunch, "~> 1.3"},
-      {:ex_sdp, "~> 0.8.0"},
-      {:membrane_rtp_plugin,
-       github: "membraneframework/membrane_rtp_plugin", branch: "RTC-93-metrics", override: true},
+      {:bunch, "~> 1.5"},
+      {:ex_sdp, "~> 0.9.0"},
+      {:membrane_rtp_plugin, "~> 0.20.0"},
       {:membrane_rtp_format, "~> 0.6.0"},
       {:membrane_ice_plugin, "~> 0.14.0"},
       {:membrane_funnel_plugin, "~> 0.7.0"},
       {:membrane_h264_ffmpeg_plugin, "~> 0.25.0"},
-      {:membrane_rtp_vp8_plugin, "~> 0.7.0"},
+      {:membrane_rtp_vp8_plugin, "~> 0.7.1"},
       {:membrane_rtp_h264_plugin, "~> 0.14.0"},
       {:membrane_rtp_opus_plugin, "~> 0.7.0"},
       {:ex_libsrtp, ">= 0.0.0"},
