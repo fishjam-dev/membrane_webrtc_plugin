@@ -342,7 +342,11 @@ defmodule Membrane.WebRTC.EndpointBin do
       bin_input(pad)
       |> then(encoding_specific_links)
       |> via_in(Pad.ref(:input, ssrc),
-        options: [payloader: payloader, rtp_extensions: rtp_extensions]
+        options: [
+          payloader: payloader,
+          rtp_extensions: rtp_extensions,
+          telemetry_label: state.telemetry_label ++ [track_id: "#{track_id}"]
+        ]
       )
       |> get_child(:rtp)
       |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
