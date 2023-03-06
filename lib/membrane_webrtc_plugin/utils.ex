@@ -14,4 +14,9 @@ defmodule Membrane.WebRTC.Utils do
       x -> to_string(x)
     end
   end
+
+  @spec anonymize_sdp(String.t()) :: String.t()
+  def anonymize_sdp(sdp) do
+    Regex.replace(~r/(ice-ufrag|fingerprint|ice-pwd):.*\n/, sdp, "\\1:****\n")
+  end
 end
