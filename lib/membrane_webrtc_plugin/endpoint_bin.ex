@@ -17,18 +17,24 @@ defmodule Membrane.WebRTC.EndpointBin do
   require Membrane.Logger
   require Membrane.OpenTelemetry
 
+  require Membrane.TelemetryMetrics
+
   alias __MODULE__.TracksState
   alias ExSDP.Media
   alias ExSDP.Attribute.{FMTP, RTPMapping}
   alias Membrane.ICE
   alias Membrane.RTP
   alias Membrane.WebRTC.{Extension, SDP, Track}
+  alias Membrane.WebRTC.Utils
 
   # we always want to use ICE lite at the moment
   @ice_lite true
 
   @life_span_id "endpoint_bin.life_span"
   @ice_restart_span_id "endpoint_bin.ice_restart"
+
+  @sdp_offer_event [Membrane.WebRTC, :sdp, :offer]
+  @sdp_answer_event [Membrane.WebRTC, :sdp, :answer]
 
   @type new_track_notification ::
           {:new_track, Track.id(), nil | Track.rid(), RTP.ssrc_t(), Track.encoding_key(),
@@ -231,6 +237,9 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_init(_ctx, %__MODULE__{} = opts) do
+    Membrane.TelemetryMetrics.register(@sdp_offer_event, opts.telemetry_label)
+    Membrane.TelemetryMetrics.register(@sdp_answer_event, opts.telemetry_label)
+
     trace_metadata =
       Keyword.merge(opts.trace_metadata, [
         {:"library.language", :erlang},
@@ -551,6 +560,13 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_parent_notification({:signal, {:sdp_offer, raw_sdp, mid_to_track_id}}, _ctx, state) do
+    Membrane.TelemetryMetrics.execute(
+      @sdp_offer_event,
+      %{sdp: Utils.anonymize_sdp(raw_sdp)},
+      %{},
+      state.telemetry_label
+    )
+
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_offer, sdp: raw_sdp)
 
     sdp = ExSDP.parse!(raw_sdp)
@@ -611,9 +627,18 @@ defmodule Membrane.WebRTC.EndpointBin do
         do: actions,
         else: actions ++ [notify_parent: {:removed_tracks, removed_inbound_tracks}]
 
+    answer_str = to_string(answer)
+
+    Membrane.TelemetryMetrics.execute(
+      @sdp_answer_event,
+      %{sdp: Utils.anonymize_sdp(answer_str)},
+      %{},
+      state.telemetry_label
+    )
+
     actions =
       new_actions ++
-        [notify_parent: {:signal, {:sdp_answer, to_string(answer), mid_to_track_id}}] ++
+        [notify_parent: {:signal, {:sdp_answer, answer_str, mid_to_track_id}}] ++
         set_remote_credentials(sdp) ++
         actions
 
