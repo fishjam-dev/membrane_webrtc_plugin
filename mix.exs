@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.14.0"
+  @version "0.14.1"
   @github_url "https://github.com/jellyfish-dev/membrane_webrtc_plugin"
 
   def project do
@@ -47,7 +47,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:membrane_core, "~> 0.11.2"},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.5"},
-      {:ex_sdp, "~> 0.9.0"},
+      {:ex_sdp, "~> 0.10.0"},
       {:membrane_rtp_plugin, "~> 0.21.0"},
       {:membrane_rtp_format, "~> 0.6.0"},
       {:membrane_ice_plugin, "~> 0.14.3"},
