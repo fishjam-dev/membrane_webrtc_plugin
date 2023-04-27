@@ -44,7 +44,9 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
   defp deps do
     [
       {:membrane_opentelemetry, "~> 0.1.0"},
-      {:membrane_core, "~> 0.11.2"},
+      # {:membrane_core, "~> 0.11.2"},
+      {:membrane_core,
+       github: "membraneframework/membrane_core", branch: "prepare-release-0.12", override: true},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.5"},
       {:ex_sdp, "~> 0.9.0"},

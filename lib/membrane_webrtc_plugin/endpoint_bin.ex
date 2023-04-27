@@ -413,6 +413,12 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
+  def handle_child_pad_removed(:rtp, Pad.ref(pad_name, _id), _ctx, state)
+      when pad_name in [:rtp_output, :rtcp_sender_output] do
+    {[], state}
+  end
+
+  @impl true
   def handle_child_notification(
         {:new_rtp_stream, ssrc, pt, _rtp_header_extensions},
         _from,
