@@ -48,7 +48,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.5"},
       {:ex_sdp, "~> 0.11.0"},
-      {:membrane_rtp_plugin, "~> 0.21.0"},
+      {:membrane_rtp_plugin, "~> 0.22.0"},
       {:membrane_rtp_format, "~> 0.6.0"},
       {:membrane_ice_plugin, "~> 0.14.3"},
       {:membrane_funnel_plugin, "~> 0.7.0"},
