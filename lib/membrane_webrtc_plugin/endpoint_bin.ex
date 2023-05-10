@@ -543,7 +543,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_child_notification({:udp_integrated_turn, turn}, _from, _ctx, state) do
-    state = %{state | integrated_turn_servers: [turn] ++ state.integrated_turn_servers}
+    # state = %{state | integrated_turn_servers: [turn] ++ state.integrated_turn_servers}
     {[], state}
   end
 
