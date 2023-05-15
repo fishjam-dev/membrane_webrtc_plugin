@@ -686,6 +686,13 @@ defmodule Membrane.WebRTC.EndpointBin do
     """
   end
 
+  @impl true
+  def handle_parent_notification({:add_tracks, []}, _ctx, state) do
+    Membrane.Logger.warn("Got empty :add_tracks notification. Ignoring.")
+    {[], state}
+  end
+
+  @impl true
   def handle_parent_notification({:add_tracks, tracks}, _ctx, state) do
     state = %State{state | tracks: TracksState.add_outbound_tracks(state.tracks, tracks)}
 
