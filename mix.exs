@@ -1,7 +1,7 @@
 defmodule Membrane.WebRTC.Plugin.Mixfile do
   use Mix.Project
 
-  @version "0.14.4"
+  @version "0.14.5"
   @github_url "https://github.com/jellyfish-dev/membrane_webrtc_plugin"
 
   def project do
