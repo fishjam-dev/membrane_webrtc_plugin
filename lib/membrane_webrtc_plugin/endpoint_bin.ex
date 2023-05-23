@@ -344,25 +344,27 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     rtp_extensions = to_rtp_extensions(extmaps, :outbound, state)
 
-    spec = [
-      get_child(:rtp)
-      |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
-      |> get_child(:ice_funnel),
-      bin_input(pad)
-      |> then(encoding_specific_links)
-      |> via_in(Pad.ref(:input, ssrc),
-        options: [
-          payloader: payloader,
-          rtp_extensions: rtp_extensions,
-          telemetry_label: state.telemetry_label ++ [track_id: "#{track_id}"]
-        ]
-      )
-      |> get_child(:rtp)
-      |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
-      |> get_child(:ice_funnel)
+    actions = [
+      spec:
+        get_child(:rtp)
+        |> via_out(Pad.ref(:rtcp_sender_output, ssrc))
+        |> get_child(:ice_funnel),
+      spec:
+        bin_input(pad)
+        |> then(encoding_specific_links)
+        |> via_in(Pad.ref(:input, ssrc),
+          options: [
+            payloader: payloader,
+            rtp_extensions: rtp_extensions,
+            telemetry_label: state.telemetry_label ++ [track_id: "#{track_id}"]
+          ]
+        )
+        |> get_child(:rtp)
+        |> via_out(Pad.ref(:rtp_output, ssrc), options: options)
+        |> get_child(:ice_funnel)
     ]
 
-    {[spec: spec], state}
+    {actions, state}
   end
 
   @impl true
