@@ -254,14 +254,26 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     rtp_input_ref = make_ref()
 
+    ice_endpoint =
+      if Application.get_env(:membrane_webrtc_plugin, :ice_mode) == :full_ice do
+        %ICE.Endpoint2{
+          handshake_opts: opts.handshake_opts,
+          telemetry_label: opts.telemetry_label,
+          trace_context: opts.trace_context,
+          parent_span: Membrane.OpenTelemetry.get_span(@life_span_id)
+        }
+      else
+        %ICE.Endpoint{
+          integrated_turn_options: opts.integrated_turn_options,
+          handshake_opts: opts.handshake_opts,
+          telemetry_label: opts.telemetry_label,
+          trace_context: opts.trace_context,
+          parent_span: Membrane.OpenTelemetry.get_span(@life_span_id)
+        }
+      end
+
     spec = [
-      child(:ice, %ICE.Endpoint{
-        integrated_turn_options: opts.integrated_turn_options,
-        handshake_opts: opts.handshake_opts,
-        telemetry_label: opts.telemetry_label,
-        trace_context: opts.trace_context,
-        parent_span: Membrane.OpenTelemetry.get_span(@life_span_id)
-      }),
+      child(:ice, ice_endpoint),
       child(:rtp, %Membrane.RTP.SessionBin{
         secure?: true,
         rtcp_receiver_report_interval: opts.rtcp_receiver_report_interval,
@@ -606,6 +618,8 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     new_actions = new_tracks_actions(new_inbound_tracks)
 
+    ice_lite? = Application.get_env(:membrane_webrtc_plugin, :ice_mode) != :full_ice
+
     answer =
       SDP.create_answer(
         inbound_tracks: inbound_tracks,
@@ -614,7 +628,7 @@ defmodule Membrane.WebRTC.EndpointBin do
         ice_pwd: state.ice.pwd,
         fingerprint: state.dtls_fingerprint,
         extensions: state.extensions,
-        ice_lite?: @ice_lite
+        ice_lite?: ice_lite?
       )
 
     {actions, state} =
@@ -656,13 +670,11 @@ defmodule Membrane.WebRTC.EndpointBin do
   end
 
   @impl true
-  def handle_parent_notification({:signal, {:candidate, candidate}}, _ctx, state) do
-    candidate = "a=" <> candidate
-
+  def handle_parent_notification({:signal, {:candidate, "candidate:" <> candidate}}, _ctx, state) do
     Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :remote_candidate, candidate: candidate)
 
     # TODO: decide what to do with this candidate
-    {[], state}
+    {[notify_child: {:ice, {:add_remote_candidate, candidate}}], state}
   end
 
   @impl true
@@ -757,8 +769,14 @@ defmodule Membrane.WebRTC.EndpointBin do
       video: Enum.count(tracks_types, &(&1 == :video))
     }
 
+    integrated_turn_servers = if Application.get_env(:membrane_webrtc_plugin, :ice_mode) == :full_ice do
+      []
+    else
+      state.integrated_turn_servers
+    end
+
     actions = [
-      notify_parent: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}
+      notify_parent: {:signal, {:offer_data, media_count, integrated_turn_servers}}
     ]
 
     if not state.ice.restarting?,
