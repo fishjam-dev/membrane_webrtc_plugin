@@ -48,7 +48,6 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.5"},
       {:ex_sdp, "~> 0.11.0"},
-      {:ex_ice, github: "elixir-webrtc/ex_ice"},
       {:membrane_rtp_plugin, "~> 0.23.0"},
       {:membrane_rtp_format, "~> 0.7.0"},
       {:membrane_ice_plugin, "~> 0.16.0"},
