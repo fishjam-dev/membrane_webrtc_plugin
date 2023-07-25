@@ -27,9 +27,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   alias Membrane.WebRTC.{Extension, SDP, Track}
   alias Membrane.WebRTC.Utils
 
-  # we always want to use ICE lite at the moment
-  @ice_lite true
-
   @life_span_id "endpoint_bin.life_span"
   @ice_restart_span_id "endpoint_bin.ice_restart"
 
@@ -769,11 +766,25 @@ defmodule Membrane.WebRTC.EndpointBin do
       video: Enum.count(tracks_types, &(&1 == :video))
     }
 
-    integrated_turn_servers = if Application.get_env(:membrane_webrtc_plugin, :ice_mode) == :full_ice do
-      []
-    else
-      state.integrated_turn_servers
-    end
+    integrated_turn_servers =
+      if Application.get_env(:membrane_webrtc_plugin, :ice_mode) == :full_ice do
+        addr = Application.fetch_env!(:membrane_webrtc_plugin, :turn_ip)
+        server_port = Application.fetch_env!(:membrane_webrtc_plugin, :turn_port)
+        pwd = Application.fetch_env!(:membrane_webrtc_plugin, :turn_password)
+        username = Application.fetch_env!(:membrane_webrtc_plugin, :turn_username)
+
+        [
+          %{
+            mocked_server_addr: addr,
+            server_port: server_port,
+            relay_type: :udp,
+            password: pwd,
+            username: username
+          }
+        ]
+      else
+        state.integrated_turn_servers
+      end
 
     actions = [
       notify_parent: {:signal, {:offer_data, media_count, integrated_turn_servers}}
