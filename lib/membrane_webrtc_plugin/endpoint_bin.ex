@@ -327,7 +327,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     encoding_specific_links =
       case encoding_key do
         :H264 when use_payloader? ->
-          &child(&1, {:h264_parser, ssrc}, %Membrane.H264.FFmpeg.Parser{alignment: :nal})
+          &child(&1, {:h264_parser, ssrc}, %Membrane.H264.Parser{output_alignment: :nalu})
 
         _other ->
           & &1
