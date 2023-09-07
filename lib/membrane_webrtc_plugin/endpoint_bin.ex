@@ -562,7 +562,10 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_child_notification(notification, from, _ctx, state) do
-    Membrane.Logger.warn("Ignoring child #{inspect(from)} notification #{inspect(notification)}")
+    Membrane.Logger.warning(
+      "Ignoring child #{inspect(from)} notification #{inspect(notification)}"
+    )
+
     {[], state}
   end
 
@@ -659,7 +662,9 @@ defmodule Membrane.WebRTC.EndpointBin do
   def handle_parent_notification({:signal, {:candidate, candidate}}, _ctx, state) do
     candidate = "a=" <> candidate
 
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :remote_candidate, candidate: candidate)
+    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :remote_candidate,
+      candidate: candidate
+    )
 
     # TODO: decide what to do with this candidate
     {[], state}
@@ -696,7 +701,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_parent_notification({:add_tracks, []}, _ctx, state) do
-    Membrane.Logger.warn("Got empty :add_tracks notification. Ignoring.")
+    Membrane.Logger.warning("Got empty :add_tracks notification. Ignoring.")
     {[], state}
   end
 
