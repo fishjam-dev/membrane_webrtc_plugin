@@ -140,7 +140,6 @@ defmodule Membrane.WebRTC.EndpointBin do
               ]
 
   def_input_pad :input,
-    demand_unit: :buffers,
     accepted_format: _any,
     availability: :on_request,
     options: [
@@ -155,7 +154,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     ]
 
   def_output_pad :output,
-    demand_unit: :buffers,
     accepted_format: _any,
     availability: :on_request,
     options: [
@@ -306,7 +304,7 @@ defmodule Membrane.WebRTC.EndpointBin do
   @impl true
   def handle_pad_added(Pad.ref(:input, track_id) = pad, ctx, state) do
     # TODO: check this one
-    %{use_payloader?: use_payloader?} = ctx.options
+    %{use_payloader?: use_payloader?} = ctx.pad_options
 
     %Track{
       ssrc: ssrc,
@@ -382,7 +380,7 @@ defmodule Membrane.WebRTC.EndpointBin do
 
     %{
       use_depayloader?: use_depayloader?
-    } = ctx.options
+    } = ctx.pad_options
 
     depayloader =
       if use_depayloader? do
@@ -396,7 +394,7 @@ defmodule Membrane.WebRTC.EndpointBin do
     telemetry_label = state.telemetry_label ++ [track_id: "#{track_id}:#{rid}"]
 
     output_pad_options = [
-      extensions: ctx.options.extensions,
+      extensions: ctx.pad_options.extensions,
       rtp_extensions: to_rtp_extensions(extmaps, :inbound, state),
       clock_rate: encoding.clock_rate,
       depayloader: depayloader,
