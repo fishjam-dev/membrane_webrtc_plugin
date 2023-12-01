@@ -13,10 +13,10 @@ defmodule Membrane.WebRTC.EndpointBinTest do
     test "creating #{inspect(direction)} EndpointBin" do
       pipeline =
         Membrane.Testing.Pipeline.start_link_supervised!(
-          structure: child(:endpoint, %EndpointBin{direction: unquote(direction)})
+          spec: child(:endpoint, %EndpointBin{direction: unquote(direction)})
         )
 
-      Membrane.Testing.Pipeline.terminate(pipeline, blocking?: true)
+      Membrane.Testing.Pipeline.terminate(pipeline)
     end
   end)
 
