@@ -15,7 +15,6 @@ defmodule Membrane.WebRTC.EndpointBin do
   use Bunch
 
   require Membrane.Logger
-  require Membrane.OpenTelemetry
 
   require Membrane.TelemetryMetrics
 
@@ -29,9 +28,6 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   # we always want to use ICE lite at the moment
   @ice_lite true
-
-  @life_span_id "endpoint_bin.life_span"
-  @ice_restart_span_id "endpoint_bin.ice_restart"
 
   @sdp_offer_event [Membrane.WebRTC, :sdp, :offer]
   @sdp_answer_event [Membrane.WebRTC, :sdp, :answer]
@@ -118,21 +114,6 @@ defmodule Membrane.WebRTC.EndpointBin do
                 sender will not send them.
                 """
               ],
-              trace_metadata: [
-                spec: :list,
-                default: [],
-                description: "A list of tuples to merge into Otel spans"
-              ],
-              trace_context: [
-                spec: :list | any(),
-                default: [],
-                description: "Trace context for otel propagation"
-              ],
-              parent_span: [
-                spec: :opentelemetry.span_ctx() | nil,
-                default: nil,
-                description: "Parent span of #{@life_span_id}"
-              ],
               telemetry_label: [
                 spec: Membrane.TelemetryMetrics.label(),
                 default: [],
@@ -183,8 +164,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     alias Membrane.WebRTC.EndpointBin.TracksState
 
     @type t :: %__MODULE__{
-            id: String.t(),
-            trace_metadata: Keyword.t(),
             log_metadata: Keyword.t(),
             tracks: TracksState.t(),
             endpoint_direction: Membrane.WebRTC.EndpointBin.direction(),
@@ -208,9 +187,7 @@ defmodule Membrane.WebRTC.EndpointBin do
             }
           }
 
-    defstruct id: "endpointBin",
-              trace_metadata: [],
-              log_metadata: [],
+    defstruct log_metadata: [],
               tracks: %TracksState{},
               endpoint_direction: :sendrecv,
               rtcp_sender_report_interval: nil,
@@ -238,27 +215,13 @@ defmodule Membrane.WebRTC.EndpointBin do
     Membrane.TelemetryMetrics.register(@sdp_offer_event, opts.telemetry_label)
     Membrane.TelemetryMetrics.register(@sdp_answer_event, opts.telemetry_label)
 
-    trace_metadata =
-      Keyword.merge(opts.trace_metadata, [
-        {:"library.language", :erlang},
-        {:"library.name", :membrane_webrtc_plugin},
-        {:"library.version", "semver:#{Application.spec(:membrane_webrtc_plugin, :vsn)}"}
-      ])
-
-    if opts.trace_context != [], do: Membrane.OpenTelemetry.attach(opts.trace_context)
-    start_span_opts = if opts.parent_span, do: [parent_span: opts.parent_span], else: []
-    Membrane.OpenTelemetry.start_span(@life_span_id, start_span_opts)
-    Membrane.OpenTelemetry.set_attributes(@life_span_id, trace_metadata)
-
     rtp_input_ref = make_ref()
 
     spec = [
       child(:ice, %ICE.Endpoint{
         integrated_turn_options: opts.integrated_turn_options,
         handshake_opts: opts.handshake_opts,
-        telemetry_label: opts.telemetry_label,
-        trace_context: opts.trace_context,
-        parent_span: Membrane.OpenTelemetry.get_span(@life_span_id)
+        telemetry_label: opts.telemetry_label
       }),
       child(:rtp, %Membrane.RTP.SessionBin{
         secure?: true,
@@ -285,8 +248,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     extensions = Enum.map(opts.extensions, &if(is_struct(&1), do: &1, else: &1.new()))
 
     state = %State{
-      id: Keyword.get(trace_metadata, :name, "endpointBin"),
-      trace_metadata: trace_metadata,
       log_metadata: opts.log_metadata,
       endpoint_direction: opts.direction,
       rtcp_sender_report_interval: opts.rtcp_sender_report_interval,
@@ -484,14 +445,12 @@ defmodule Membrane.WebRTC.EndpointBin do
 
   @impl true
   def handle_child_notification({:new_candidate_full, cand}, _from, _ctx, state) do
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :local_candidate, candidate: cand)
     state = Map.update!(state, :candidates, &[cand | &1])
     {notify_candidates([cand]), state}
   end
 
   @impl true
   def handle_child_notification(:candidate_gathering_done, _from, _ctx, state) do
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :candidate_gathering_done, [])
     {[], %{state | candidate_gathering_state: :done}}
   end
 
@@ -502,23 +461,18 @@ defmodule Membrane.WebRTC.EndpointBin do
         _ctx,
         state
       ) do
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :connection_failed)
-    Membrane.OpenTelemetry.end_span(@ice_restart_span_id)
-
     state = %{state | ice: %{state.ice | restarting?: false}}
     maybe_restart_ice(state, true)
   end
 
   @impl true
-  def handle_child_notification({:connection_ready, stream_id, component_id}, _from, _ctx, state)
+  def handle_child_notification(
+        {:connection_ready, _stream_id, _component_id},
+        _from,
+        _ctx,
+        state
+      )
       when state.ice.restarting? do
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :connection_ready,
-      stream_id: stream_id,
-      component_id: component_id
-    )
-
-    Membrane.OpenTelemetry.end_span(@ice_restart_span_id)
-
     new_outbound_tracks =
       state.tracks.outbound
       |> Map.values()
@@ -576,27 +530,10 @@ defmodule Membrane.WebRTC.EndpointBin do
       state.telemetry_label
     )
 
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_offer, sdp: raw_sdp)
-
     sdp = ExSDP.parse!(raw_sdp)
 
     {new_inbound_tracks, removed_inbound_tracks, inbound_tracks, outbound_tracks} =
       get_tracks_from_sdp(sdp, mid_to_track_id, state)
-
-    for {label, tracks} <- [
-          new_inbound_tracks: new_inbound_tracks,
-          removed_inbound_tracks: removed_inbound_tracks,
-          inbound_tracks: inbound_tracks,
-          outbound_tracks: outbound_tracks
-        ] do
-      if tracks != [] do
-        Membrane.OpenTelemetry.set_attribute(
-          @ice_restart_span_id,
-          label,
-          Enum.map(tracks, &Track.to_otel_data/1)
-        )
-      end
-    end
 
     tracks_state =
       state.tracks
@@ -651,19 +588,11 @@ defmodule Membrane.WebRTC.EndpointBin do
         set_remote_credentials(sdp) ++
         actions
 
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :sdp_answer, sdp: to_string(answer))
-
     {actions, state}
   end
 
   @impl true
-  def handle_parent_notification({:signal, {:candidate, candidate}}, _ctx, state) do
-    candidate = "a=" <> candidate
-
-    Membrane.OpenTelemetry.add_event(@ice_restart_span_id, :remote_candidate,
-      candidate: candidate
-    )
-
+  def handle_parent_notification({:signal, {:candidate, _candidate}}, _ctx, state) do
     # TODO: decide what to do with this candidate
     {[], state}
   end
@@ -734,8 +663,6 @@ defmodule Membrane.WebRTC.EndpointBin do
         else: state
 
     if not state.ice.restarting? and state.ice.waiting_restart? do
-      Membrane.OpenTelemetry.start_span(@ice_restart_span_id, parent_id: @life_span_id)
-
       state =
         state
         |> put_in([:ice, :restarting?], true)
@@ -763,9 +690,6 @@ defmodule Membrane.WebRTC.EndpointBin do
     actions = [
       notify_parent: {:signal, {:offer_data, media_count, state.integrated_turn_servers}}
     ]
-
-    if not state.ice.restarting?,
-      do: Membrane.OpenTelemetry.start_span(@ice_restart_span_id, parent_id: @life_span_id)
 
     state = Map.update!(state, :ice, &%{&1 | restarting?: true})
 

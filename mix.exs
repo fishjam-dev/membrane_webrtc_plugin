@@ -43,14 +43,15 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
 
   defp deps do
     [
-      {:membrane_opentelemetry, "~> 0.1.0"},
       {:membrane_core, "~> 1.0"},
       {:qex, "~> 0.5.0"},
       {:bunch, "~> 1.5"},
       {:ex_sdp, "~> 0.13.1"},
       {:membrane_rtp_plugin, "~> 0.24.0"},
       {:membrane_rtp_format, "~> 0.8.0"},
-      {:membrane_ice_plugin, "~> 0.17.0"},
+      # {:membrane_ice_plugin, "~> 0.17.0"},
+      {:membrane_ice_plugin,
+       github: "jellyfish-dev/membrane_ice_plugin", branch: "remove-opentelemetry"},
       {:membrane_funnel_plugin, "~> 0.9.0"},
       {:membrane_h264_plugin, "~> 0.9.0"},
       {:membrane_rtp_vp8_plugin, "~> 0.9.0"},
@@ -59,11 +60,7 @@ defmodule Membrane.WebRTC.Plugin.Mixfile do
       {:ex_libsrtp, ">= 0.0.0"},
       {:ex_doc, "~> 0.28", only: :dev, runtime: false},
       {:dialyxir, "~> 1.1", only: :dev, runtime: false},
-      {:credo, "~> 1.6", only: :dev, runtime: false},
-
-      # Otel
-      {:opentelemetry_api, "~> 1.0"},
-      {:opentelemetry, "~> 1.0.4"}
+      {:credo, "~> 1.6", only: :dev, runtime: false}
     ]
   end
 
