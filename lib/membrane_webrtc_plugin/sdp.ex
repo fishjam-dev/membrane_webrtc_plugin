@@ -246,9 +246,6 @@ defmodule Membrane.WebRTC.SDP do
     {recv_only_sdp_media, _rest_sdp_media} =
       Enum.split_with(rest_sdp_media, &(:recvonly in &1.attributes))
 
-    # TODO should stream_id be the same for all tracks?
-    stream_id = Track.stream_id()
-
     # new_inbound_disabled_tracks are tracks that
     # peer wanted to send to us but we disabled them
     # after applying constraints
@@ -256,6 +253,9 @@ defmodule Membrane.WebRTC.SDP do
       send_only_sdp_media
       |> Enum.map(fn sdp_media ->
         {:mid, mid} = Media.get_attribute(sdp_media, :mid)
+        ssrcs = Media.get_attributes(sdp_media, SSRC)
+        stream_id = Enum.find(ssrcs, &(&1.attribute == "mslabel")) || %{value: Track.stream_id()}
+        stream_id = stream_id.value
         track_id = mid_to_track_id[mid]
         Track.from_sdp_media(sdp_media, track_id, stream_id)
       end)
